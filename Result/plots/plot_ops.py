@@ -3,73 +3,86 @@ import matplotlib.pyplot as plt
 from itertools import product
 from scipy.interpolate import make_interp_spline
 import numpy as np
-import argparse
-
-
 
 # Function to plot smooth line graphs
 def plot_duration_vs_ops(df, num_threads, autonuma):
-    df_filtered = df[df['num_threads'] == num_threads]
-    plt.figure(figsize=(12, 6))
+    df_filtered = df[(df['num_threads'] == num_threads) & (df['duration'] <= 800)]
+    plt.figure(figsize=(6, 6))
+
+    linestyles = {
+        ('numa', 'numa'): 'solid',
+        ('numa', 'regular'): 'dashed',
+        ('regular', 'numa'): 'solid',
+        ('regular', 'regular'): 'dashed',
+        ('reverse', 'numa'): 'solid',
+        ('reverse', 'regular'): 'dashed'
+    }
 
     for th, ds in configs:
-        label = f"{th} {ds}"
+        label = f"{th} th. / {ds} ds."
         subset = df_filtered[
-            (df_filtered['th_config'] == th) & 
+            (df_filtered['th_config'] == th) &
             (df_filtered['DS_config'] == ds)
         ].sort_values(by='duration')
+
+        if th == 'numa':
+            base_color = 'blue'
+        elif th == 'regular':
+            base_color = 'red'
+        else:
+            base_color = 'gray'
+
+        linestyle = linestyles.get((th, ds), 'solid')
 
         if not subset.empty and len(subset) > 3:
             x = subset['duration'].values
             y = subset['Total Ops'].values / 1e9  # Scale to billions
 
-            # Interpolate for smoothing
             x_new = np.linspace(x.min(), x.max(), 300)
-            spline = make_interp_spline(x, y, k=3)  # Cubic spline
+            spline = make_interp_spline(x, y, k=3)
             y_smooth = spline(x_new)
 
-            plt.plot(x_new, y_smooth, label=label)
+            plt.plot(x_new, y_smooth, label=label, color=base_color, linestyle=linestyle, linewidth=2)
         elif not subset.empty:
-            # fallback to raw points if not enough for spline
-            plt.plot(subset['duration'], subset['Total Ops'] / 1e9, label=label, marker='o')
+            plt.plot(subset['duration'], subset['Total Ops'] / 1e9,
+                     label=label, marker='o', color=base_color,
+                     linestyle=linestyle, linewidth=2)
 
-    plt.title(f"Total Ops vs Duration (num_threads = {num_threads})")
-    plt.xlabel("Duration (s)")
-    plt.ylabel("Total Operations (Billions)")
-    plt.legend()
+    # Styling
+    plt.xlabel("Duration (s)", fontsize=14)
+    plt.ylabel("Total Operations (Billions)", fontsize=14)
+    plt.tick_params(axis='both', labelsize=12)
+    plt.legend(loc="lower right",fontsize=14)
     plt.grid(True)
     plt.tight_layout()
-    if(autonuma == 1):
-        plt.savefig(f"./Throughput/AutoNuma/TotalOps_vs_Duration_{num_threads}threads_AN.png", dpi=300)
-        plt.savefig(f"./Throughput/AutoNuma/TotalOps_vs_Duration_{num_threads}threads_AN.pdf", dpi=300)
-    else:
-        plt.savefig(f"./Throughput/NoAutoNuma/TotalOps_vs_Duration_{num_threads}threads.png", dpi=300)
-        plt.savefig(f"./Throughput/NoAutoNuma/TotalOps_vs_Duration_{num_threads}threads.pdf", dpi=300)
+
+    # Save plots
+    suffix = "_AN" if autonuma == 1 else ""
+    path_prefix = "./Throughput/AutoNuma" if autonuma == 1 else "./Throughput/NoAutoNuma"
+
+    png_path = f"{path_prefix}/TotalOps_vs_Duration_{num_threads}threads{suffix}.png"
+    pdf_path = f"{path_prefix}/TotalOps_vs_Duration_{num_threads}threads{suffix}.pdf"
+
+    plt.savefig(png_path, dpi=300)
+    plt.savefig(pdf_path, dpi=300)
     plt.show()
 
-# Plot for 40 and optionally 80 threads
-
-
-
-
-
-
+# Main block
 if __name__ == "__main__":
-    with open("/proc/sys/kernel/numa_balancing") as f: autonuma = int(f.read().strip())
-    print("Plotting with autonuma= ", autonuma)
-    # # Load and clean CSV
+    with open("/proc/sys/kernel/numa_balancing") as f:
+        autonuma = int(f.read().strip())
+    print("Plotting with autonuma =", autonuma)
 
     csv_file = "../BST_Transactions_AN.csv" if autonuma == 1 else "../BST_Transactions.csv"
     df = pd.read_csv(csv_file)
-    print("Input file loaded is ",csv_file)
+    print("Input file loaded:", csv_file)
+
     df.columns = [col.strip() for col in df.columns]
     df.rename(columns={'thread_config': 'th_config', 'TotalOps': 'Total Ops'}, inplace=True)
 
-    # Normalize configs to lowercase
     df['th_config'] = df['th_config'].astype(str).str.strip().str.lower()
     df['DS_config'] = df['DS_config'].astype(str).str.strip().str.lower()
 
-    # Define configurations
     th_configs = ['numa', 'regular', 'reverse']
     ds_configs = ['numa', 'regular']
     configs = list(product(th_configs, ds_configs))

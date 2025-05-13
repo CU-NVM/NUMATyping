@@ -110,15 +110,17 @@ if __name__ == "__main__":
 
     if args.all:
         # Run all DS and Thread Configurations
-        for th in TH_CONFIGS:
-            for ds in DS_CONFIGS:
+        # for th in TH_CONFIGS:
+        #     for ds in DS_CONFIGS:
                 #output_file = run_perf(th,ds, args.binary_path)
-                output_file = f"./LocalRemoteStat/local_remote_{th}_{ds}.txt"
-                convert_perf_to_csv(output_file)
+                # output_file = f"./LocalRemoteStat/local_remote_{th}_{ds}_AN.txt"
+                # convert_perf_to_csv(output_file)
                 #generated_files.append(csv_file)
 
         # Merge into final CSV
         #merge_csv(generated_files, "final_perf_results.csv")
+        output_file = f"./LocalRemoteStat/local_remote_regular_regular_AN.txt"
+        convert_perf_to_csv(output_file)
 
     else:
         # Use default values if not provided

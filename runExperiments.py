@@ -131,7 +131,7 @@ if __name__ == "__main__":
         if (args.verbose):
             command =f"cd ./Output/{args.exprName}/ &&  python3 meta.py numactl --cpunodebind=0,1 --membind=0,1 ./Examples/bin/DSExample --meta n:1000000 --meta t:40:80 --meta D:800 --meta DS_name:bst --meta th_config:numa:regular:reverse --meta DS_config:numa:regular --meta k:160  --meta i:10"
         else:
-            command = f"cd ./Output/{args.exprName}/ &&  numactl --cpunodebind=0,1 --membind=0,1 python3 meta.py ./Examples/bin/DSExample --meta n:1000000 --meta t:40:80 --meta D:800 --meta DS_name:bst --meta th_config:numa:regular:reverse --meta DS_config:numa:regular --meta k:160  --meta i:10>> ../../Result/BST_Transactions.csv"
+            command = f"cd ./Output/{args.exprName}/ && python3 meta.py ./Examples/bin/DSExample --meta n:1000000 --meta t:40:80 --meta D:800 --meta DS_name:bst --meta th_config:numa:regular:reverse --meta DS_config:numa:regular --meta k:160  --meta i:10>> Result/BST_Transactions.csv"
           
     print("command is ", command)
     run_command(command)
