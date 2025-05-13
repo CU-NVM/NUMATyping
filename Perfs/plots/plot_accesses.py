@@ -27,15 +27,16 @@ def plot_csv(thread_config, ds_config):
     remote_smooth = make_interp_spline(time, remote, k=3)(x_dense)
     local_smooth = make_interp_spline(time, local, k=3)(x_dense)
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(x_dense, remote_smooth, label='Remote DRAM Accesses',color='blue', linewidth=2)
-    plt.plot(x_dense, local_smooth, label='Local DRAM Accesses',color='red', linewidth=2)
+    plt.figure(figsize=(5, 5))
+    plt.plot(x_dense, remote_smooth, label='Remote DRAM Accesses', color='blue', linewidth=2)
+    plt.plot(x_dense, local_smooth, label='Local DRAM Accesses', color='red', linewidth=2)
 
-    plt.title(f"Accesses over Time ({thread_config} / {ds_config})")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Accesses (Millions)")
+    # plt.title(f"Accesses over Time ({thread_config} / {ds_config})", fontsize=15)
+    plt.xlabel("Time (s)", fontsize=17)
+    plt.ylabel("Accesses (Millions)", fontsize=17)
     plt.grid(True)
-    plt.legend()
+    plt.legend(fontsize=14, loc='lower right')
+    plt.tick_params(axis='both', labelsize=17)
     plt.tight_layout()
 
     output_file_png = f"access_plot_{thread_config}_{ds_config}.png"
