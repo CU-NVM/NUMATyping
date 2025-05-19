@@ -60,8 +60,8 @@ def plot_duration_vs_ops(df, num_threads, autonuma):
     suffix = "_AN" if autonuma == 1 else ""
     path_prefix = "./Throughput/AutoNuma" if autonuma == 1 else "./Throughput/NoAutoNuma"
 
-    png_path = f"{path_prefix}/TotalOps_vs_Duration_{num_threads}threads{suffix}.png"
-    pdf_path = f"{path_prefix}/TotalOps_vs_Duration_{num_threads}threads{suffix}.pdf"
+    png_path = f"{path_prefix}/TotalOps_vs_Duration_{num_threads}threads{suffix}2.png"
+    pdf_path = f"{path_prefix}/TotalOps_vs_Duration_{num_threads}threads{suffix}2.pdf"
 
     plt.savefig(png_path, dpi=300)
     plt.savefig(pdf_path, dpi=300)
@@ -73,7 +73,7 @@ if __name__ == "__main__":
         autonuma = int(f.read().strip())
     print("Plotting with autonuma =", autonuma)
 
-    csv_file = "../BST_Transactions_AN.csv" if autonuma == 1 else "../BST_Transactions.csv"
+    csv_file = "../BST_Transactions_AN_2.csv" if autonuma == 1 else "../BST_Transactions2.csv"
     df = pd.read_csv(csv_file)
     print("Input file loaded:", csv_file)
 
