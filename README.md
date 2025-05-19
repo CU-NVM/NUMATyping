@@ -1,11 +1,15 @@
 # NUMA TYPING 
+* **Adjust HOME_DIR variable to your appropriate home directory in ```Exprs/Examples/Makefile```**
+* **Adjust the clang version in ```numa-clang-tool/run.sh``` (Currently version 21)**
+
+
 
 A compiler tool project for recursivley typing NUMA annotated objects for increased local accesses. This repository contains a data structure benchmark which has numa data structures and numa threads that access these data structures. The benchmark reports thread throughput of different configurations of these data structures.
 
 
 ## How to compile
 
-```
+```bash
 cd numa-clang-tool
 
 mkdir build 
@@ -21,7 +25,7 @@ cd ../../
 
 This compiles the clang tool that is used to compile a source code.
 
-```
+```bash
 cd unified-memory-framework
 
 mkdir build
@@ -55,7 +59,7 @@ This command copies the Exprs benchmark into the ```numa-clang-tool``` folder, c
 
 *to-do: make this part of the runExperiments.py script
 
-```
+```bash
 cp -rf Exprs numa-clang-tool/input
 
 cd numa-clang-tool
@@ -81,7 +85,7 @@ The first three arguments of the last command bind the process to be run on just
 
 3. **To run a single configuration of all options (no cross product of options)**
 
-```
+```bash
 cp -rf Exprs numa-clang-tool/input
 
 cd numa-clang-tool
