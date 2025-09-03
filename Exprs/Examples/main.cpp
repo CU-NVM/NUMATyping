@@ -84,35 +84,6 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
 	std::cout<<totalOps << "\n";
 }
 
-bool parse_prefill(const std::string& optarg, prefill_percentage& percentages) {
-    std::istringstream stream(optarg);
-    std::string value;
-    std::vector<float> values;
-
-    // Split optarg by commas and convert to floats
-    while (std::getline(stream, value, ',')) {
-        try {
-            values.push_back(std::stof(value));
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Invalid percentage value: " << value << std::endl;
-            return false;
-        }
-    }
-
-    // Check if we have exactly 4 values
-    if (values.size() != 4) {
-        std::cerr << "Error: --prefill requires exactly 4 comma-separated values." << std::endl;
-        return false;
-    }
-
-    // Assign values to struct fields
-    percentages.write = values[0];
-    percentages.read = values[1];
-    percentages.remove = values[2];
-    percentages.update = values[3];
-    return true;
-}
-
 
 void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover, int keyspace){
 	#ifdef PIN_INIT
@@ -128,23 +99,9 @@ void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover,
 			if(init_thread1 != nullptr){
 				init_thread1->join();
 			}
-			// if(init_thread_regular0 != nullptr){
-			// 	init_thread_regular0->join();
-			// }
-
-			// if(init_thread_regular1 != nullptr){
-			// 	init_thread_regular1->join();
-			// }
-			
-			// if(init_thread0 != nullptr){
-			// 	init_thread0->join();
-			// }
-			
-			// if(init_thread1 != nullptr){
-			// 	init_thread1->join();
-			// }
+		
 		#else
-			// std::cout<< "single threaded initialization running" <<std::endl;
+			std::cout<< "single threaded initialization running" <<std::endl;
 			numa_BST_single_init(DS_config, num_DS/2, keyspace, -1, crossover);
 		#endif
 
@@ -229,7 +186,6 @@ void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover,
 
 int main(int argc, char *argv[])
 {
-	prefill_percentage percentages = {0.0f, 0.0f, 0.0f, 0.0f};
 	//std::cout<<"Date, Time, DS, num_DS, num_threads, thread_config, DS_config, duration, crossover, keyspace, ops0, ops1, total_ops\n";
 	    // Define long options
 	static struct option long_options[] = {
@@ -301,123 +257,24 @@ int main(int argc, char *argv[])
 
 	print_function(0, 0 ,0, 0);
     
-	// std::cout<<endl;
 	numa_thread0.resize(num_threads);
 	numa_thread1.resize(num_threads);
 	regular_thread0.resize(num_threads);
 	regular_thread1.resize(num_threads);
+
 	global_init(num_threads, duration, interval);
-	
-	// // #ifdef UMF
-	// // 	warmUpPool();
-	// // #endif
-	// if(DS_config == "numa"){
-	// 	singleThreadedStackInit(num_DS, true);
-	// }
-	// else {
-	// 	singleThreadedStackInit(num_DS,false);
-	// }
 
-	// // Check if NUMA is available and the node is allowed
-    // if (numa_available() == -1) {
-    //     std::cout << "NUMA not available.\n";
-    //     return 1;
-    // }
-
-    // // Pin the main thread to the specified NUMA node
-    // if (numa_run_on_node(0) != 0) {
-    //     std::cout<<"Could not run on node 0.\n";
-    //     return 1;
-    // }
-
-	// singleThreadedStackTest(duration, num_DS);
-	// std::cout<<"percentage write = "<< percentages.write <<std::endl;
-	if(DS_name == "array"){
-		numa_array_init(DS_config, num_DS/2, prefill_set, percentages);
-
-		for(int i=0; i < num_threads/2; i++){
-			int node = 0;
-			int tid = i;
-			if(thread_config == "numa"){
-				numa_thread0[i] = new thread_numa<0>(ArrayTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
-			}
-			else if(thread_config == "regular"){
-				regular_thread0[i] = new thread(ArrayTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
-			}
-			else{
-				numa_thread0[i] = new thread_numa<0>(ArrayTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
-			}
+	// Check if NUMA is available and the node is allowed	
+	if (thread_config == "numa" || DS_config == "numa") {
+		if (numa_num_configured_nodes() == 1) {
+			std::cout << "NUMA not available.\n";
+			return 1;
 		}
-
-		for(int i=0; i < num_threads/2; i++){
-			int node = 1;
-			int tid = i + num_threads/2;
-			if(thread_config == "numa"){
-				numa_thread1[i] = new thread_numa<1>(ArrayTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
-			}
-			else if(thread_config == "regular"){
-				regular_thread1[i] = new thread(ArrayTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
-			}
-			else{
-				numa_thread1[i] = new thread_numa<1>(ArrayTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
-			}
-		}
-
-		if(thread_config == "numa"){
-			for(int i=0; i < num_threads/2; i++){
-				if(numa_thread0[i] == nullptr){
-					continue;
-				}
-				numa_thread0[i]->join();
-			}
-			for(int i=0; i < num_threads/2; i++){
-				if(numa_thread1[i] == nullptr){
-					continue;
-				}
-				numa_thread1[i]->join();
-			}
-		}
-		else if(thread_config == "regular"){
-			for(int i=0; i < regular_thread0.size(); i++){
-				if(regular_thread0[i] == nullptr){
-					continue;
-				}
-				regular_thread0[i]->join();
-			}
-			for(int i=0; i < regular_thread1.size(); i++){
-				if(regular_thread1[i] == nullptr){
-					continue;
-				}
-				regular_thread1[i]->join();
-			}
-		}
-		else{
-			for(int i=0; i < numa_thread0.size(); i++){
-				if(numa_thread0[i] == nullptr){
-					continue;
-				}
-				numa_thread0[i]->join();
-			}
-			for(int i=0; i < numa_thread1.size(); i++){
-				if(numa_thread1[i] == nullptr){
-					continue;
-				}
-				numa_thread1[i]->join();
-			}
-		}
-
-		for(int i :globalOps0){
-			std::cout << i << ", ";
-		}
-		for(int i :globalOps1){
-			std::cout << i << ", ";
-		}
-		std::cout << ops0 << ", ";
-		std::cout << ops1 << ", ";
-		std::cout << ops0 + ops1 << "\n";
 	}
-	else if(DS_name == "stack"){
-		numa_Stack_init(DS_config, num_DS/2, prefill_set, percentages);
+	
+	
+	if(DS_name == "stack"){
+		numa_Stack_init(DS_config, num_DS/2, prefill_set);
 
 		for(int i=0; i < num_threads/2; i++){
 			int node = 0;
@@ -496,7 +353,7 @@ int main(int argc, char *argv[])
 	}
 
 	else if(DS_name == "queue"){
-		numa_Queue_init(DS_config, num_DS/2, prefill_set, percentages);
+		numa_Queue_init(DS_config, num_DS/2, prefill_set);
 		for(int i=0; i < num_threads/2; i++){
 			int node = 0;
 			int tid = i;
@@ -593,37 +450,17 @@ int main(int argc, char *argv[])
 		for(int i = 0; i < total_ops.size(); i++){
 			total_sum += total_ops[i];
 		}
-
-
-
 		int newDuration = interval;
-		// //std::cout<< "Ops0 per 20 seconds: ";
-		// for(int i :globalOps0){
-		// 	print_function(newDuration, i, 0, 0);
-		// }
-		// std::cout<<std::endl;
-		// //std::cout<< "Ops1 per 20 seconds: ";
-		// for(int i :globalOps1){
-		// 	print_function(newDuration, 0, i, 0);
-		
-		// }
-
 		for(int i = 0; i< globalOps0.size(); i++){
 			print_function(newDuration, globalOps0[i], globalOps1[i], globalOps0[i] + globalOps1[i]);
 			newDuration += interval;
 		}
-		// std::cout<<std::endl;
-		// std::cout<<"Total Ops seconds: ";
-		// std::cout << ops0 << ", ";
-		// std::cout << ops1 << ", ";
-		// std::cout << ops0+ops1<< "";
-	
 	}
 
 
 
 	else if(DS_name == "ll"){
-		numa_LL_init(DS_config, num_DS/2, prefill_set, percentages);
+		numa_LL_init(DS_config, num_DS/2, prefill_set);
 		for(int i=0; i < num_threads/2; i++){
 			int node = 0;
 			int tid = i;

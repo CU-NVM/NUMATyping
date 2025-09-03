@@ -1,1 +1,8 @@
-./numa-clang-tool/build/
+numa-clang-tool/build/
+unified-memory-framework/build/
+*.o
+*
+!*/
+!*.*
+
+
