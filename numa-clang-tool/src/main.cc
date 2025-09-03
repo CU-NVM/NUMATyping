@@ -124,8 +124,6 @@ void print(const std::vector<CompileCommand> &Commands) {
 
 int main(int argc, const char **argv) {
 
-
-
   static cl::OptionCategory ToolCategory("my-clang-tool options");
 
   static cl::opt<bool> NUMAFrontendAction(

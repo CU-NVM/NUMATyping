@@ -18,7 +18,7 @@ cd build
 
 cmake ..
 
-cmake --build build
+cmake --build .
 
 cd ../../
 ```

@@ -38,8 +38,7 @@ int64_t ops0=0;
 int64_t ops1=0;
 
 int sharedCounter = 0;
-char* Arrays0;
-char* Arrays1;
+
 
 std::vector<mutex*> Stack_lk0;
 std::vector<mutex*> Stack_lk1;
@@ -72,8 +71,6 @@ std::vector<LinkedList*> LLs1;
 std::vector<mutex*> LL_lk0;
 std::vector<mutex*> LL_lk1;
 
-mutex* Array_Lk0;
-mutex* Array_Lk1;
 
 struct prefill_percentage{
 	float write;
@@ -96,6 +93,7 @@ int checkNUMANode(void* ptr) {
     } else {
         std::cerr << "Failed to get NUMA node for pointer at " << ptr << std::endl;
     }
+	return 0;
 }
 
 
@@ -109,51 +107,10 @@ void global_init(int num_threads, int duration, int interval){
 	ops1 = 0;
 	printLK = new std::mutex();
 	globalLK = new std::mutex();
-	Array_Lk0 = new mutex();
-	Array_Lk1 = new mutex();
-}
-
-void singleThreadedStackInit(int num_DS, bool isNuma){
-	Stacks0.resize(num_DS);
-	if(isNuma){
-		cout<<"Initializing numa stack pool"<<endl;
-		for(int i = 0; i < num_DS; i++)
-		{
-			Stacks0[i] = reinterpret_cast<Stack*>(new numa<Stack,0>());
-		}
-	}
-	else{
-		cout<<"Initializing regular stack pool"<<endl;
-		for(int i = 0; i < num_DS; i++)
-		{
-			Stacks0[i] = new Stack();
-		}
-	}
 }
 
 
-void numa_array_init(std::string DS_config, int size, bool prefill, prefill_percentage &percentages){
-	if(DS_config=="numa"){	
-		Arrays0 = (char*)umf_alloc(0, sizeof(char)* size, alignof(char));
-	}
-	else{
-		Arrays0 = new char[size];
-	}
-	if(DS_config=="numa"){	
-		Arrays1 = (char*)umf_alloc(1, sizeof(char)* size, alignof(char));
-	}
-	else{
-		Arrays1 = new char[size];
-	}
-	if(prefill){
-		for(int i = 0; i < size/int(percentages.write); i++){
-			Arrays0[i] = 'a';
-			Arrays1[i] = 'a';
-		}
-	}
-}
-
-void numa_Stack_init(std::string DS_config, int num_DS, bool prefill, prefill_percentage &percentages){
+void numa_Stack_init(std::string DS_config, int num_DS, bool prefill){
 	Stacks0.resize(num_DS);
 	for(int i = 0; i < num_DS; i++)
 	{
@@ -197,7 +154,7 @@ void numa_Stack_init(std::string DS_config, int num_DS, bool prefill, prefill_pe
 		std::uniform_int_distribution<> dist2(0, Stacks0.size()-1);
 		std::uniform_int_distribution<> dist3(100, 200);
 		//Prefill in 50 % of the Stacks with random number of nodes (0-200) number of nodes
-		for(int i = 0; i < num_DS/int(percentages.write) ; i++)
+		for(int i = 0; i < num_DS/2 ; i++)
 		{
 			int ds = dist1(gen);
 			for(int j=0; j < 200*1024; j++)
@@ -207,7 +164,7 @@ void numa_Stack_init(std::string DS_config, int num_DS, bool prefill, prefill_pe
 				Stack_lk0[ds]->unlock();
 			}
 		}
-		for(int i = 0; i < num_DS/int(percentages.write) ; i++)
+		for(int i = 0; i < num_DS/2; i++)
 		{
 			int ds = dist2(gen);
 			for(int j=0; j < 200*1024; j++)
@@ -217,11 +174,11 @@ void numa_Stack_init(std::string DS_config, int num_DS, bool prefill, prefill_pe
 				Stack_lk1[ds]->unlock();
 			}
 		}
-	// 	std::cout<<"Prefilled " <<num_DS/int(percentages.write) <<" stacks with " << 200*1024 << " nodes each"<<std::endl;	
+
 	}
 }
 
-void numa_Queue_init(std::string DS_config, int num_DS, bool prefill, prefill_percentage &percentages){
+void numa_Queue_init(std::string DS_config, int num_DS, bool prefill){
 	Queues0.resize(num_DS);
 	for(int i = 0; i < num_DS; i++)
 	{
@@ -262,25 +219,24 @@ void numa_Queue_init(std::string DS_config, int num_DS, bool prefill, prefill_pe
 		std::uniform_int_distribution<> dist3(100, 200);
 		int ds3 = dist3(gen);
 		//Prefill in 50 % of the Queue with random number of nodes (0-200) number of nodes
-		for(int i = 0; i < num_DS/int(percentages.write) ; i++){
+		for(int i = 0; i < num_DS/2 ; i++){
 			int ds = dist1(gen);
 			for(int j=0; j < 40*1024*1024; j++)
 			{
 				Queues0[ds]->add(j);
 			}
 		}
-		for(int i = 0; i < num_DS/int(percentages.write) ; i++){
+		for(int i = 0; i < num_DS/2; i++){
 			int ds = dist2(gen);
 			for(int j=0; j < 40*1024*1024; j++)
 			{
 				Queues1[ds]->add(j);
 			}
 		}
-		//std::cout<<"Prefilled " <<num_DS/int(percentages.write) <<" queue with " << ds3 << " nodes each"<<std::endl;		
 	}
 }
 
-void numa_LL_init(std::string DS_config, int num_DS, bool prefill, prefill_percentage &percentages){
+void numa_LL_init(std::string DS_config, int num_DS, bool prefill){
 	LLs0.resize(num_DS);
 	for(int i = 0; i < num_DS; i++)
 	{
@@ -321,7 +277,7 @@ void numa_LL_init(std::string DS_config, int num_DS, bool prefill, prefill_perce
 		std::uniform_int_distribution<> dist3(100, 200);
 		int ds3 = dist3(gen);
 		//Prefill in 50 % of the Stacks with random number of nodes (0-200) number of nodes
-		for(int i = 0; i < num_DS/int(percentages.write) ; i++)
+		for(int i = 0; i < num_DS/2; i++)
 		{
 			int ds = dist1(gen);
 			for(int j=0; j < dist3(gen); j++)
@@ -331,7 +287,7 @@ void numa_LL_init(std::string DS_config, int num_DS, bool prefill, prefill_perce
 				LL_lk0[ds]->unlock();
 			}
 		}	
-		for(int i = 0; i < num_DS/int(percentages.write) ; i++)
+		for(int i = 0; i < num_DS/2; i++)
 		{
 			int ds = dist2(gen);
 			for(int j=0; j < dist3(gen); j++)
@@ -341,7 +297,6 @@ void numa_LL_init(std::string DS_config, int num_DS, bool prefill, prefill_perce
 				LL_lk1[ds]->unlock();
 			}
 		}
-		std::cout<<"Prefilled " <<num_DS/int(percentages.write) <<" ll with " << dist3(gen) << " nodes each"<<std::endl;	
 	}
 }
 
@@ -531,44 +486,6 @@ void singleThreadedStackTest(int duration, int64_t num_DS){
 
 	std::cout << "OPS FOR SINGLE THREAD IS: " << ops << std::endl;
 }
-
-
-
-void ArrayTest(int tid,  int duration, int node, int64_t num_DS, int num_threads, int crossover){
-
-	int ops = 0;
-	auto startTimer = std::chrono::steady_clock::now();
-	auto endTimer = startTimer + std::chrono::seconds(duration);
-	while (std::chrono::steady_clock::now() < endTimer) {
-		int x = 0;
-		if(node==0){
-			Array_Lk0->lock();
-			Arrays0[x] = 1;
-			Array_Lk0->unlock();
-			
-		}
-		else{
-			Array_Lk1->lock();
-			Arrays1[x] = 1;
-			Array_Lk1->unlock();
-		}
-		ops++;
-	}
-
-	globalLK->lock();
-	if(node==0)
-	{
-		ops0 += ops;
-	}
-	else
-	{
-		ops1 += ops;
-	}
-	globalLK->unlock();
-
-	pthread_barrier_wait(&bar);
-}
-
 
 void StackTest(int tid,  int duration, int node, int64_t num_DS, int num_threads, int crossover)
 {	
