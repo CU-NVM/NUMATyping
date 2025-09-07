@@ -29,6 +29,15 @@
 #define MEGABYTE 1048576
 
 
+#ifdef NUMA_MACHINE
+	#define NODE_ZERO 0
+	#define NODE_ONE 1
+#else
+	#define NODE_ZERO 0
+	#define NODE_ONE 0
+#endif
+
+
 using namespace std::chrono;
 std::vector<Stack*> Stacks0;
 std::vector<Stack*> Stacks1;
@@ -70,14 +79,6 @@ std::vector<LinkedList*> LLs0;
 std::vector<LinkedList*> LLs1;
 std::vector<mutex*> LL_lk0;
 std::vector<mutex*> LL_lk1;
-
-
-struct prefill_percentage{
-	float write;
-	float read;
-	float remove;
-	float update;
-};
 
 // chrono::high_resolution_clock::time_point startTimer;
 // chrono::high_resolution_clock::time_point endTimer;
@@ -315,8 +316,8 @@ void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int n
 		int x = xDist(gen);
 		
 		if(DS_config=="numa"){
-			BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,0>());
-			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,1>());
+			BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
+			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
 		}
 		else{
 			BSTs0[i] = new BinarySearchTree();
@@ -367,14 +368,14 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 			int x = xDist(gen);
 			if(x <= crossover){
 				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,1>());
+					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
 				}
 				else{
 					BSTs1[i] = new BinarySearchTree();
 				}
 			}else{
 				if(DS_config=="numa"){
-					BSTs0[i] =reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,0>());
+					BSTs0[i] =reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
 				}
 				else{
 					BSTs0[i] = new BinarySearchTree();
@@ -417,14 +418,14 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 			int x = xDist(gen);
 			if(x <= crossover){
 				if(DS_config=="numa"){
-					BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,0>());
+					BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
 				}
 				else{
 					BSTs0[i] = new BinarySearchTree();
 				}
 			}else{
 				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,1>());
+					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
 				}
 				else{
 					BSTs1[i] = new BinarySearchTree();

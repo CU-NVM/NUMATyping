@@ -22,6 +22,16 @@
 #include <unordered_map>
 
 
+#ifdef NUMA_MACHINE
+	#define NODE_ZERO 0
+	#define NODE_ONE 1
+#else
+	#define NODE_ZERO 0
+	#define NODE_ONE 0
+#endif
+
+
+
 #define NUMA_NODES 4
 using namespace std;
 
@@ -56,12 +66,12 @@ std::vector <int64_t> total_ops;
 
 
 
-std::vector <thread_numa<0>*> numa_thread0;
-std::vector <thread_numa<1>*> numa_thread1;
+std::vector <thread_numa<NODE_ZERO>*> numa_thread0;
+std::vector <thread_numa<NODE_ONE>*> numa_thread1;
 std::vector <thread*> regular_thread0;
 std::vector <thread*> regular_thread1;
-thread_numa<0>* init_thread0;
-thread_numa<1>* init_thread1;
+thread_numa<NODE_ZERO>* init_thread0;
+thread_numa<NODE_ONE>* init_thread1;
 std::thread* init_thread_regular0;
 std::thread* init_thread_regular1;
 
@@ -87,8 +97,8 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
 
 void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover, int keyspace){
 	#ifdef PIN_INIT
-			init_thread0 = new thread_numa<0>(numa_BST_init, DS_config, num_DS/2, keyspace, 0,crossover);
-			init_thread1 = new thread_numa<1>(numa_BST_init, DS_config, num_DS/2, keyspace, 1,crossover);
+			init_thread0 = new thread_numa<NODE_ZERO>(numa_BST_init, DS_config, num_DS/2, keyspace, 0,crossover);
+			init_thread1 = new thread_numa<NODE_ONE>(numa_BST_init, DS_config, num_DS/2, keyspace, 1,crossover);
 			// std::cout<< "multi threaded initialization running" <<std::endl;
 			// init_thread_regular0 = new thread(numa_BST_single_init, DS_config, num_DS/2, keyspace, 0, crossover);
 			// init_thread_regular1 = new thread(numa_BST_single_init, DS_config, num_DS/2, keyspace, 1, crossover);
@@ -110,26 +120,26 @@ void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover,
 			int node = 0;
 			int tid = i;
 			if(thread_config == "numa"){
-				numa_thread0[i] = new thread_numa<0>(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover, keyspace, interval);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover, keyspace, interval);
 			}
 			else if(thread_config == "regular"){
 				regular_thread0[i] = new thread(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover, keyspace, interval);
 			}
 			else{
-				numa_thread0[i] = new thread_numa<0>(BinarySearchTest, tid, duration, 1, num_DS/2, num_threads/2, crossover, keyspace, interval);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(BinarySearchTest, tid, duration, 1, num_DS/2, num_threads/2, crossover, keyspace, interval);
 			}
 		}
 		for(int i=0; i < num_threads/2; i++){
 			int node = 1;
 			int tid = i + num_threads/2;
 			if(thread_config == "numa"){
-				numa_thread1[i] = new thread_numa<1>(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover,keyspace, interval);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover,keyspace, interval);
 			}
 			else if(thread_config == "regular"){
 				regular_thread1[i] = new thread(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover,keyspace, interval);
 			}
 			else{
-				numa_thread1[i] = new thread_numa<1>(BinarySearchTest, tid, duration, 0, num_DS/2, num_threads/2, crossover, keyspace, interval);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(BinarySearchTest, tid, duration, 0, num_DS/2, num_threads/2, crossover, keyspace, interval);
 			}
 		}
 
@@ -268,7 +278,7 @@ int main(int argc, char *argv[])
 	if (thread_config == "numa" || DS_config == "numa") {
 		if (numa_num_configured_nodes() == 1) {
 			std::cout << "NUMA not available.\n";
-			return 1;
+			//return 1;
 		}
 	}
 	
@@ -280,13 +290,13 @@ int main(int argc, char *argv[])
 			int node = 0;
 			int tid = i;
 			if(thread_config == "numa"){
-				numa_thread0[i] = new thread_numa<0>(StackTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(StackTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else if(thread_config== "regular"){
 				regular_thread0[i] = new thread(StackTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else{
-				numa_thread0[i] = new thread_numa<0>(StackTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(StackTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
 			}
 		}
 		for(int i=0; i < num_threads/2; i++){
@@ -294,13 +304,13 @@ int main(int argc, char *argv[])
 			int tid = i + num_threads/2;
 
 			if(thread_config == "numa"){
-				numa_thread1[i] = new thread_numa<1>(StackTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(StackTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else if(thread_config== "regular"){
 				regular_thread1[i] = new thread(StackTest, tid, duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else{
-				numa_thread1[i] = new thread_numa<1>(StackTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(StackTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
 			}
 		}
 
@@ -358,26 +368,26 @@ int main(int argc, char *argv[])
 			int node = 0;
 			int tid = i;
 			if(thread_config == "numa"){
-				numa_thread0[i] = new thread_numa<0>(QueueTest,tid, duration, node, num_DS/2, num_threads/2, crossover);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(QueueTest,tid, duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else if(thread_config == "regular"){
 				regular_thread0[i] = new thread(QueueTest,tid, duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else{
-				numa_thread0[i] = new thread_numa<0>(QueueTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(QueueTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
 			}
 		}
 		for(int i=0; i < num_threads/2; i++){
 			int node = 1;
 			int tid = i + num_threads/2;
 			if(thread_config == "numa"){
-				numa_thread1[i] = new thread_numa<1>(QueueTest,tid , duration, node, num_DS/2, num_threads/2, crossover);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(QueueTest,tid , duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else if(thread_config == "regular"){
 				regular_thread1[i] = new thread(QueueTest,tid , duration, node, num_DS/2, num_threads/2, crossover);
 			}
 			else{
-				numa_thread1[i] = new thread_numa<1>(QueueTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(QueueTest, tid, duration, i%2, num_DS/2, num_threads/2, crossover);
 			}
 		}
 
@@ -465,26 +475,26 @@ int main(int argc, char *argv[])
 			int node = 0;
 			int tid = i;
 			if(thread_config == "numa"){
-				numa_thread0[i] = new thread_numa<0>(LinkedListTest,tid, duration, node, num_DS/2, num_threads, crossover);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(LinkedListTest,tid, duration, node, num_DS/2, num_threads, crossover);
 			}
 			else if(thread_config == "regular"){
 				regular_thread0[i] = new thread(LinkedListTest,tid, duration, node, num_DS/2, num_threads, crossover);
 			}
 			else{
-				numa_thread0[i] = new thread_numa<0>(LinkedListTest, tid, duration, i%2, num_DS/2, num_threads, crossover);
+				numa_thread0[i] = new thread_numa<NODE_ZERO>(LinkedListTest, tid, duration, i%2, num_DS/2, num_threads, crossover);
 			}
 		}
 		for(int i=0; i < num_threads/2; i++){
 			int node = 1;
 			int tid = i + num_threads/2;
 			if(thread_config == "numa"){
-				numa_thread1[i] = new thread_numa<1>(LinkedListTest,tid, duration, node, num_DS/2, num_threads, crossover);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(LinkedListTest,tid, duration, node, num_DS/2, num_threads, crossover);
 			}
 			else if(thread_config == "regular"){
 				regular_thread1[i] = new thread(LinkedListTest,tid, duration, node, num_DS/2, num_threads, crossover);
 			}
 			else{
-				numa_thread1[i] = new thread_numa<1>(LinkedListTest, tid, duration, i%2, num_DS/2, num_threads, crossover);
+				numa_thread1[i] = new thread_numa<NODE_ONE>(LinkedListTest, tid, duration, i%2, num_DS/2, num_threads, crossover);
 			}
 		}
 

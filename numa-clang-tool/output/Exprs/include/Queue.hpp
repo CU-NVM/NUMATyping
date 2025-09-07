@@ -10,6 +10,18 @@
                     #include <string.h>
                 #endif
                 #include "numatype.hpp"
+                #ifdef UMF 
+	                #include "numatype.hpp"
+	                #include <umf/mempolicy.h>
+	                #include <umf/memspace.h>
+                    #include "utils_examples.h"
+                    #include "umf_numa_allocator.hpp"
+                    #include <numa.h>
+                    #include <numaif.h>
+                    #include <stdio.h>
+                    #include <string.h>
+                #endif
+                #include "numatype.hpp"
                 
 #ifndef _QUEUE_HPP_
 #define _QUEUE_HPP_
@@ -159,12 +171,12 @@ virtual int del(){
 }
 virtual void add(int initData){
     if (this->front == __null) {
-        this->front = new Node(initData);
+        this->front = reinterpret_cast<Node*>(new numa<Node,0>(initData));
         this->front->setLink(this->rear);
         this->rear = this->front;
         return;
     }
-    Node *newNode = new Node(initData);
+    Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(initData));
     this->rear->setLink(newNode);
     newNode->setLink(__null);
     this->rear = newNode;
@@ -266,12 +278,12 @@ virtual int del(){
 }
 virtual void add(int initData){
     if (this->front == __null) {
-        this->front = new Node(initData);
+        this->front = reinterpret_cast<Node*>(new numa<Node,1>(initData));
         this->front->setLink(this->rear);
         this->rear = this->front;
         return;
     }
-    Node *newNode = new Node(initData);
+    Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(initData));
     this->rear->setLink(newNode);
     newNode->setLink(__null);
     this->rear = newNode;

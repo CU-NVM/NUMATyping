@@ -10,6 +10,18 @@
                     #include <string.h>
                 #endif
                 #include "numatype.hpp"
+                #ifdef UMF 
+	                #include "numatype.hpp"
+	                #include <umf/mempolicy.h>
+	                #include <umf/memspace.h>
+                    #include "utils_examples.h"
+                    #include "umf_numa_allocator.hpp"
+                    #include <numa.h>
+                    #include <numaif.h>
+                    #include <stdio.h>
+                    #include <string.h>
+                #endif
+                #include "numatype.hpp"
                 #ifndef _LINKEDLIST_HPP_
 #define _LINKEDLIST_HPP_
 
@@ -242,7 +254,7 @@ virtual int removeHead(){
 }
 virtual void append(int data){
     if (this->head == __null) {
-        Node *newNode = new Node(data);
+        Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(data));
         newNode->setLink(__null);
         this->head = newNode;
         this->length++;
@@ -252,7 +264,7 @@ virtual void append(int data){
     while (true)
         {
             if (temp->getLink() == __null) {
-                Node *newNode = new Node(data);
+                Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(data));
                 newNode->setLink(__null);
                 temp->setLink(newNode);
                 this->length++;
@@ -262,14 +274,14 @@ virtual void append(int data){
         }
 }
 virtual void prepend(int data){
-    Node *newNode = new Node(data);
+    Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(data));
     newNode->setLink(this->head);
     this->head = newNode;
     this->length++;
 }
 virtual void insertAfter(int existData, int newData){
     if (this->head == __null) {
-        Node *newNode = new Node(newData);
+        Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(newData));
         newNode->setLink(__null);
         this->head = newNode;
         this->length++;
@@ -279,7 +291,7 @@ virtual void insertAfter(int existData, int newData){
     while (temp != __null)
         {
             if (temp->getData() == existData) {
-                Node *newNode = new Node(newData);
+                Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(newData));
                 newNode->setLink(temp->getLink());
                 temp->setLink(newNode);
                 this->length++;
@@ -315,7 +327,7 @@ virtual void insertAtIndex(int index, int newData){
         return;
     }
     if (this->head == __null) {
-        Node *newNode = new Node(newData);
+        Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(newData));
         newNode->setLink(__null);
         this->head = newNode;
         this->length++;
@@ -327,7 +339,7 @@ virtual void insertAtIndex(int index, int newData){
     while (temp != __null)
         {
             if (i == index) {
-                Node *newNode = new Node(newData);
+                Node *newNode = reinterpret_cast<Node*>(new numa<Node,0>(newData));
                 newNode->setLink(temp);
                 prev->setLink(newNode);
                 this->length++;
@@ -455,7 +467,7 @@ virtual int removeHead(){
 }
 virtual void append(int data){
     if (this->head == __null) {
-        Node *newNode = new Node(data);
+        Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(data));
         newNode->setLink(__null);
         this->head = newNode;
         this->length++;
@@ -465,7 +477,7 @@ virtual void append(int data){
     while (true)
         {
             if (temp->getLink() == __null) {
-                Node *newNode = new Node(data);
+                Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(data));
                 newNode->setLink(__null);
                 temp->setLink(newNode);
                 this->length++;
@@ -475,14 +487,14 @@ virtual void append(int data){
         }
 }
 virtual void prepend(int data){
-    Node *newNode = new Node(data);
+    Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(data));
     newNode->setLink(this->head);
     this->head = newNode;
     this->length++;
 }
 virtual void insertAfter(int existData, int newData){
     if (this->head == __null) {
-        Node *newNode = new Node(newData);
+        Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(newData));
         newNode->setLink(__null);
         this->head = newNode;
         this->length++;
@@ -492,7 +504,7 @@ virtual void insertAfter(int existData, int newData){
     while (temp != __null)
         {
             if (temp->getData() == existData) {
-                Node *newNode = new Node(newData);
+                Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(newData));
                 newNode->setLink(temp->getLink());
                 temp->setLink(newNode);
                 this->length++;
@@ -528,7 +540,7 @@ virtual void insertAtIndex(int index, int newData){
         return;
     }
     if (this->head == __null) {
-        Node *newNode = new Node(newData);
+        Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(newData));
         newNode->setLink(__null);
         this->head = newNode;
         this->length++;
@@ -540,7 +552,7 @@ virtual void insertAtIndex(int index, int newData){
     while (temp != __null)
         {
             if (i == index) {
-                Node *newNode = new Node(newData);
+                Node *newNode = reinterpret_cast<Node*>(new numa<Node,1>(newData));
                 newNode->setLink(temp);
                 prev->setLink(newNode);
                 this->length++;

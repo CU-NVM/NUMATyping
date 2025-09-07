@@ -88,7 +88,7 @@ if __name__ == "__main__":
     
     copy_folder(clang_tool_output, experiment_output)
         
-    run_command(f"chmod -R 777 ./Output/{args.exprName}/")
+    run_command(f"chmod -R 775 ./Output/{args.exprName}/")
     
     command = f"cd ./Output/{args.exprName}/ && sudo  make clean"
     
