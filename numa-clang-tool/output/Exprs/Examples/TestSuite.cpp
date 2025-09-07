@@ -863,6 +863,7 @@ void LinkedListTest(int tid, int duration, int node, int64_t num_DS, int num_thr
 
 void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_threads, int crossover, int keyspace, int interval)
 {	
+	std::cout<<"THREAD GOT HERE"<<std::endl;
 	#ifdef DEBUG
 	if(tid == 1 && node==0)
 	{	// startTime = chrono::high_resolution_clock::now();

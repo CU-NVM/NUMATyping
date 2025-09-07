@@ -10,6 +10,18 @@
                     #include <string.h>
                 #endif
                 #include "numatype.hpp"
+                #ifdef UMF 
+	                #include "numatype.hpp"
+	                #include <umf/mempolicy.h>
+	                #include <umf/memspace.h>
+                    #include "utils_examples.h"
+                    #include "umf_numa_allocator.hpp"
+                    #include <numa.h>
+                    #include <numaif.h>
+                    #include <stdio.h>
+                    #include <string.h>
+                #endif
+                #include "numatype.hpp"
                 /*! \file Stack.hpp
  * \brief Interface for a simple Stack class
  * \author Nii Mante
@@ -179,7 +191,7 @@ virtual int pop(){
     return data;
 }
 virtual void push(int data){
-    Node *newN = new Node(data);
+    Node *newN = reinterpret_cast<Node*>(new numa<Node,0>(data));
     if (newN == __null) {
         std::cerr << "Stack full" << std::endl;
         return;
@@ -289,7 +301,7 @@ virtual int pop(){
     return data;
 }
 virtual void push(int data){
-    Node *newN = new Node(data);
+    Node *newN = reinterpret_cast<Node*>(new numa<Node,1>(data));
     if (newN == __null) {
         std::cerr << "Stack full" << std::endl;
         return;

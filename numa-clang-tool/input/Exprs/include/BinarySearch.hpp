@@ -1,4 +1,16 @@
-#ifndef _BINARYSEARCH_HPP_
+#ifdef UMF 
+	                #include "numatype.hpp"
+	                #include <umf/mempolicy.h>
+	                #include <umf/memspace.h>
+                    #include "utils_examples.h"
+                    #include "umf_numa_allocator.hpp"
+                    #include <numa.h>
+                    #include <numaif.h>
+                    #include <stdio.h>
+                    #include <string.h>
+                #endif
+                #include "numatype.hpp"
+                #ifndef _BINARYSEARCH_HPP_
 #define _BINARYSEARCH_HPP_
 
 
@@ -38,7 +50,7 @@ public:
 	 * \brief BinarySearchTree Destructor
 	 *
 	 */
-	~BinarySearchTree();
+	virtual ~BinarySearchTree();
 
 	/*!
 	 * \brief Insert data into the binary search tree
@@ -50,14 +62,14 @@ public:
 	 * \param[in] data Data to be inserted.
 	 *
 	 */
-	BinaryNode* deleteHelper(BinaryNode* parent, BinaryNode *node, int data);
+	virtual BinaryNode* deleteHelper(BinaryNode* parent, BinaryNode *node, int data);
 
-	BinaryNode* findMin(BinaryNode *node);
+	virtual BinaryNode* findMin(BinaryNode *node);
 
-	int insert(int data);
+	virtual int insert(int data);
 
-	int getDepth();
-	int getDepthHelper(BinaryNode *node);
+	virtual int getDepth();
+	virtual int getDepthHelper(BinaryNode *node);
 	/*!
 	 * \brief Look up data in the binary search tree
 	 * 
@@ -68,7 +80,7 @@ public:
 	 *
 	 */ 
 
-	int lookup(int data);
+	virtual int lookup(int data);
 
 	/*!
 	 * 
@@ -81,7 +93,7 @@ public:
 	 */
 
 
-	void postOrderPrint();
+	virtual void postOrderPrint();
 
 	/*! 
 	 * \brief Pre order print method to display the tree
@@ -93,7 +105,7 @@ public:
 	 * 
 	 */
 	
-	void preOrderPrint();
+	virtual void preOrderPrint();
 
 	/*!
 	 * \brief In order print method to display the tree
@@ -103,22 +115,488 @@ public:
 	 * Transverse the right leaf in inorder.
 	 *
 	 */
-	void inOrderPrint();
+	virtual void inOrderPrint();
 
 	//More functions to come soon
 
 
 	//Recursive Functions
-	void inOrder(BinaryNode *node);
+	virtual void inOrder(BinaryNode *node);
 
-	void preOrder(BinaryNode *node);
+	virtual void preOrder(BinaryNode *node);
 
-	void postOrder(BinaryNode *node);
+	virtual void postOrder(BinaryNode *node);
 
-	void update(int data);
+	virtual void update(int data);
 
-	void remove(int data);
+	virtual void remove(int data);
 
+};
+
+template<>
+class numa<BinarySearchTree,0>{
+public: 
+    static void* operator new(std::size_t sz){
+        void* p;
+        #ifdef UMF
+            p= umf_alloc(0 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+        #else
+            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 0);
+        #endif
+        
+        if (p == nullptr) {
+            std::cout<<"allocation failed\n";
+            throw std::bad_alloc();
+        }
+        return p;
+    }
+
+    static void* operator new[](std::size_t sz){
+        void* p;
+        #ifdef UMF
+            p= umf_alloc(0 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+        #else
+            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 0);
+        #endif
+        
+        if (p == nullptr) {
+            std::cout<<"allocation failed\n";
+            throw std::bad_alloc();
+        }
+        return p;
+    }
+
+    static void operator delete(void* ptr){
+        // cout<<"doing numa free \n";
+        #ifdef UMF
+			umf_free(0,ptr);
+		#else
+		    numa_free(ptr, 1 * sizeof(BinarySearchTree));
+        #endif
+    }
+
+    static void operator delete[](void* ptr){
+		// cout<<"doing numa free \n";
+        #ifdef UMF
+			umf_free(0,ptr);
+		#else
+		    numa_free(ptr, 1 * sizeof(BinarySearchTree));
+        #endif
+    }
+public:
+numa (){
+}
+virtual ~numa()
+{
+	root = NULL;
+}
+virtual BinaryNode * deleteHelper(BinaryNode * parent, BinaryNode * node, int key){
+    if (!node)
+        return nullptr;
+    if (key < node->getData()) {
+        node->setLeftChild(this->deleteHelper(node, node->getLeftChild(), key));
+    } else if (key > node->getData()) {
+        node->setRightChild(this->deleteHelper(node, node->getRightChild(), key));
+    } else {
+        if (!node->getLeftChild()) {
+            BinaryNode *temp = node->getRightChild();
+            delete node;
+            return temp;
+        } else if (!node->getRightChild()) {
+            BinaryNode *temp = node->getLeftChild();
+            delete node;
+            return temp;
+        }
+        BinaryNode *temp = this->findMin(node->getRightChild());
+        BinaryNode *temp2 = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,0>(temp->getData()));
+        temp2->setLeftChild(node->getLeftChild());
+        temp2->setRightChild(node->getRightChild());
+        delete node;
+        if (parent->getData() > temp2->getData()) {
+            parent->setLeftChild(temp2);
+        } else {
+            parent->setRightChild(temp2);
+        }
+        node->setRightChild(this->deleteHelper(temp2, temp2->getRightChild(), temp2->getData()));
+    }
+    return node;
+}
+virtual BinaryNode * findMin(BinaryNode * node){
+    while (node && node->getLeftChild())
+        node = node->getLeftChild();
+    return node;
+}
+virtual int insert(int data){
+    BinaryNode *leaf = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,0>(data));
+    if (this->root == __null) {
+        this->root = leaf;
+        return 0;
+    }
+    BinaryNode *current = this->root;
+    BinaryNode *parent = nullptr;
+    int level = 0;
+    while (current != __null)
+        {
+            parent = current;
+            if (data < current->getData()) {
+                current = current->getLeftChild();
+                level++;
+            } else if (data > current->getData()) {
+                current = current->getRightChild();
+                level++;
+            } else {
+                delete leaf;
+                return level;
+            }
+        }
+    if (data < parent->getData()) {
+        parent->setLeftChild(leaf);
+    } else {
+        parent->setRightChild(leaf);
+    }
+    return level;
+}
+virtual int getDepth(){
+    return this->getDepthHelper(this->root);
+}
+virtual int getDepthHelper(BinaryNode * node){
+    if (node == __null)
+        return 0;
+    int leftDepth = this->getDepthHelper(node->getLeftChild());
+    int rightDepth = this->getDepthHelper(node->getRightChild());
+    return std::max(leftDepth, rightDepth) + 1;
+}
+virtual int lookup(int data){
+    if (this->root == __null) {
+        return 0;
+    }
+    BinaryNode *current = this->root;
+    BinaryNode *parent;
+    int level = 0;
+    while (current != __null)
+        {
+            if (current->getData() == data) {
+                return level;
+            }
+            if (data < current->getData()) {
+                current = current->getLeftChild();
+                level++;
+            } else {
+                current = current->getRightChild();
+                level++;
+            }
+        }
+    return level;
+}
+virtual void postOrderPrint(){
+    std::cout << "Post Order Print" << std::endl;
+    this->postOrder(this->root);
+    std::cout << std::endl;
+}
+virtual void preOrderPrint(){
+    std::cout << "Pre Order Print" << std::endl;
+    this->preOrder(this->root);
+    std::cout << std::endl;
+}
+virtual void inOrderPrint(){
+    std::cout << "In Order Print" << std::endl;
+    this->inOrder(this->root);
+    std::cout << std::endl;
+}
+virtual void inOrder(BinaryNode * node){
+    if (node == __null)
+        return;
+    if (node->getLeftChild() != __null)
+        this->inOrder(node->getLeftChild());
+    std::cout << " " << node->getData() << " ";
+    if (node->getRightChild() != __null)
+        this->inOrder(node->getRightChild());
+}
+virtual void preOrder(BinaryNode * node){
+    if (node == __null)
+        return;
+    std::cout << " " << node->getData() << " ";
+    if (node->getLeftChild() != __null)
+        this->inOrder(node->getLeftChild());
+    if (node->getRightChild() != __null)
+        this->inOrder(node->getRightChild());
+}
+virtual void postOrder(BinaryNode * node){
+    if (node == __null)
+        return;
+    if (node->getLeftChild() != __null)
+        this->postOrder(node->getLeftChild());
+    if (node->getRightChild() != __null)
+        this->postOrder(node->getRightChild());
+    std::cout << " " << node->getData() << " ";
+}
+virtual void update(int data){
+    if (this->root == __null) {
+        return;
+    }
+    BinaryNode *current = this->root;
+    BinaryNode *parent;
+    while (current != __null)
+        {
+            if (current->getData() == data) {
+                return;
+            }
+            if (data < current->getData()) {
+                current = current->getLeftChild();
+            } else {
+                current = current->getRightChild();
+            }
+        }
+}
+virtual void remove(int data){
+    if (this->root == __null) {
+        return;
+    }
+    if (this->root->getData() == data) {
+        delete this->root;
+        this->root = __null;
+        return;
+    } else if (this->root->getData() < data) {
+        this->root->setLeftChild(this->deleteHelper(this->root, this->root->getLeftChild(), data));
+    } else if (data > this->root->getData()) {
+        this->root->setRightChild(this->deleteHelper(this->root, this->root->getRightChild(), data));
+    }
+}
+private:
+numa<BinaryNode*,0> root;
+};
+
+template<>
+class numa<BinarySearchTree,1>{
+public: 
+    static void* operator new(std::size_t sz){
+        void* p;
+        #ifdef UMF
+            p= umf_alloc(1 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+        #else
+            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 1);
+        #endif
+        
+        if (p == nullptr) {
+            std::cout<<"allocation failed\n";
+            throw std::bad_alloc();
+        }
+        return p;
+    }
+
+    static void* operator new[](std::size_t sz){
+        void* p;
+        #ifdef UMF
+            p= umf_alloc(1 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+        #else
+            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 1);
+        #endif
+        
+        if (p == nullptr) {
+            std::cout<<"allocation failed\n";
+            throw std::bad_alloc();
+        }
+        return p;
+    }
+
+    static void operator delete(void* ptr){
+        // cout<<"doing numa free \n";
+        #ifdef UMF
+			umf_free(1,ptr);
+		#else
+		    numa_free(ptr, 1 * sizeof(BinarySearchTree));
+        #endif
+    }
+
+    static void operator delete[](void* ptr){
+		// cout<<"doing numa free \n";
+        #ifdef UMF
+			umf_free(1,ptr);
+		#else
+		    numa_free(ptr, 1 * sizeof(BinarySearchTree));
+        #endif
+    }
+public:
+numa (){
+}
+virtual ~numa()
+{
+	root = NULL;
+}
+virtual BinaryNode * deleteHelper(BinaryNode * parent, BinaryNode * node, int key){
+    if (!node)
+        return nullptr;
+    if (key < node->getData()) {
+        node->setLeftChild(this->deleteHelper(node, node->getLeftChild(), key));
+    } else if (key > node->getData()) {
+        node->setRightChild(this->deleteHelper(node, node->getRightChild(), key));
+    } else {
+        if (!node->getLeftChild()) {
+            BinaryNode *temp = node->getRightChild();
+            delete node;
+            return temp;
+        } else if (!node->getRightChild()) {
+            BinaryNode *temp = node->getLeftChild();
+            delete node;
+            return temp;
+        }
+        BinaryNode *temp = this->findMin(node->getRightChild());
+        BinaryNode *temp2 = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,1>(temp->getData()));
+        temp2->setLeftChild(node->getLeftChild());
+        temp2->setRightChild(node->getRightChild());
+        delete node;
+        if (parent->getData() > temp2->getData()) {
+            parent->setLeftChild(temp2);
+        } else {
+            parent->setRightChild(temp2);
+        }
+        node->setRightChild(this->deleteHelper(temp2, temp2->getRightChild(), temp2->getData()));
+    }
+    return node;
+}
+virtual BinaryNode * findMin(BinaryNode * node){
+    while (node && node->getLeftChild())
+        node = node->getLeftChild();
+    return node;
+}
+virtual int insert(int data){
+    BinaryNode *leaf = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,1>(data));
+    if (this->root == __null) {
+        this->root = leaf;
+        return 0;
+    }
+    BinaryNode *current = this->root;
+    BinaryNode *parent = nullptr;
+    int level = 0;
+    while (current != __null)
+        {
+            parent = current;
+            if (data < current->getData()) {
+                current = current->getLeftChild();
+                level++;
+            } else if (data > current->getData()) {
+                current = current->getRightChild();
+                level++;
+            } else {
+                delete leaf;
+                return level;
+            }
+        }
+    if (data < parent->getData()) {
+        parent->setLeftChild(leaf);
+    } else {
+        parent->setRightChild(leaf);
+    }
+    return level;
+}
+virtual int getDepth(){
+    return this->getDepthHelper(this->root);
+}
+virtual int getDepthHelper(BinaryNode * node){
+    if (node == __null)
+        return 0;
+    int leftDepth = this->getDepthHelper(node->getLeftChild());
+    int rightDepth = this->getDepthHelper(node->getRightChild());
+    return std::max(leftDepth, rightDepth) + 1;
+}
+virtual int lookup(int data){
+    if (this->root == __null) {
+        return 0;
+    }
+    BinaryNode *current = this->root;
+    BinaryNode *parent;
+    int level = 0;
+    while (current != __null)
+        {
+            if (current->getData() == data) {
+                return level;
+            }
+            if (data < current->getData()) {
+                current = current->getLeftChild();
+                level++;
+            } else {
+                current = current->getRightChild();
+                level++;
+            }
+        }
+    return level;
+}
+virtual void postOrderPrint(){
+    std::cout << "Post Order Print" << std::endl;
+    this->postOrder(this->root);
+    std::cout << std::endl;
+}
+virtual void preOrderPrint(){
+    std::cout << "Pre Order Print" << std::endl;
+    this->preOrder(this->root);
+    std::cout << std::endl;
+}
+virtual void inOrderPrint(){
+    std::cout << "In Order Print" << std::endl;
+    this->inOrder(this->root);
+    std::cout << std::endl;
+}
+virtual void inOrder(BinaryNode * node){
+    if (node == __null)
+        return;
+    if (node->getLeftChild() != __null)
+        this->inOrder(node->getLeftChild());
+    std::cout << " " << node->getData() << " ";
+    if (node->getRightChild() != __null)
+        this->inOrder(node->getRightChild());
+}
+virtual void preOrder(BinaryNode * node){
+    if (node == __null)
+        return;
+    std::cout << " " << node->getData() << " ";
+    if (node->getLeftChild() != __null)
+        this->inOrder(node->getLeftChild());
+    if (node->getRightChild() != __null)
+        this->inOrder(node->getRightChild());
+}
+virtual void postOrder(BinaryNode * node){
+    if (node == __null)
+        return;
+    if (node->getLeftChild() != __null)
+        this->postOrder(node->getLeftChild());
+    if (node->getRightChild() != __null)
+        this->postOrder(node->getRightChild());
+    std::cout << " " << node->getData() << " ";
+}
+virtual void update(int data){
+    if (this->root == __null) {
+        return;
+    }
+    BinaryNode *current = this->root;
+    BinaryNode *parent;
+    while (current != __null)
+        {
+            if (current->getData() == data) {
+                return;
+            }
+            if (data < current->getData()) {
+                current = current->getLeftChild();
+            } else {
+                current = current->getRightChild();
+            }
+        }
+}
+virtual void remove(int data){
+    if (this->root == __null) {
+        return;
+    }
+    if (this->root->getData() == data) {
+        delete this->root;
+        this->root = __null;
+        return;
+    } else if (this->root->getData() < data) {
+        this->root->setLeftChild(this->deleteHelper(this->root, this->root->getLeftChild(), data));
+    } else if (data > this->root->getData()) {
+        this->root->setRightChild(this->deleteHelper(this->root, this->root->getRightChild(), data));
+    }
+}
+private:
+numa<BinaryNode*,1> root;
 };
 
 BinarySearchTree::BinarySearchTree() : root(NULL)

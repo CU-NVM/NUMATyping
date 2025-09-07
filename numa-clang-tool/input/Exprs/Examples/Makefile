@@ -1,6 +1,6 @@
 CC=clang++
 DIRS=Node Stack Queue BinarySearch
-HOME_DIR :=/home/kiwo9430
+HOME_DIR :=/home/kidus
 LINK_DIRS=-L../Stack/bin -L../Queue/bin -L../BinarySearch/bin -L../LinkdedList/bin 
 
 LINK_FLAGS=-lnuma -std=c++20 -pthread 
@@ -46,9 +46,6 @@ main.o:
 
 TestSuite.o: TestSuite.hpp TestSuite.cpp
 	$(CC) -c  -O3 -g -std=c++20  -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)  TestSuite.cpp 
-
-st_test.o: st_test.cpp
-	$(CC) -c -O3 -g -std=c++20  -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)  st_test.cpp
 
 
 clean:

@@ -10,6 +10,18 @@
                     #include <string.h>
                 #endif
                 #include "numatype.hpp"
+                #ifdef UMF 
+	                #include "numatype.hpp"
+	                #include <umf/mempolicy.h>
+	                #include <umf/memspace.h>
+                    #include "utils_examples.h"
+                    #include "umf_numa_allocator.hpp"
+                    #include <numa.h>
+                    #include <numaif.h>
+                    #include <stdio.h>
+                    #include <string.h>
+                #endif
+                #include "numatype.hpp"
                 #ifndef _BINARYSEARCH_HPP_
 #define _BINARYSEARCH_HPP_
 
@@ -208,7 +220,7 @@ virtual BinaryNode * deleteHelper(BinaryNode * parent, BinaryNode * node, int ke
             return temp;
         }
         BinaryNode *temp = this->findMin(node->getRightChild());
-        BinaryNode *temp2 = new BinaryNode(temp->getData());
+        BinaryNode *temp2 = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,0>(temp->getData()));
         temp2->setLeftChild(node->getLeftChild());
         temp2->setRightChild(node->getRightChild());
         delete node;
@@ -227,7 +239,7 @@ virtual BinaryNode * findMin(BinaryNode * node){
     return node;
 }
 virtual int insert(int data){
-    BinaryNode *leaf = new BinaryNode(data);
+    BinaryNode *leaf = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,0>(data));
     if (this->root == __null) {
         this->root = leaf;
         return 0;
@@ -441,7 +453,7 @@ virtual BinaryNode * deleteHelper(BinaryNode * parent, BinaryNode * node, int ke
             return temp;
         }
         BinaryNode *temp = this->findMin(node->getRightChild());
-        BinaryNode *temp2 = new BinaryNode(temp->getData());
+        BinaryNode *temp2 = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,1>(temp->getData()));
         temp2->setLeftChild(node->getLeftChild());
         temp2->setRightChild(node->getRightChild());
         delete node;
@@ -460,7 +472,7 @@ virtual BinaryNode * findMin(BinaryNode * node){
     return node;
 }
 virtual int insert(int data){
-    BinaryNode *leaf = new BinaryNode(data);
+    BinaryNode *leaf = reinterpret_cast<BinaryNode*>(new numa<BinaryNode,1>(data));
     if (this->root == __null) {
         this->root = leaf;
         return 0;
