@@ -4,5 +4,7 @@ unified-memory-framework/build/
 *
 !*/
 !*.*
+.DS_Store
+*/.DS_Store
 
 
