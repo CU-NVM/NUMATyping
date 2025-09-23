@@ -7,6 +7,7 @@
 #include <vector>
 #include <random>
 #include <string>
+#include <thread>
 
 using namespace std;
 using namespace ycsbc;
@@ -39,70 +40,111 @@ WorkloadConfig selectWorkload(const string &w) {
     throw runtime_error("Unknown workload " + w);
 }
 
+// helper that matches command line arg to locality split
+int selectLocality(const string &l) {
+    if (l == "80-20") return 80;
+    if (l == "50-50") return 50;
+    if (l == "20-80") return 20;
+    throw runtime_error("Unknown locality split. Use 80-20, 50-50, or 20-80." + l);
+}
+
+// convert functionality to be contained in threads
+void worker_thread(
+    int num_ops,
+    const WorkloadConfig* cfg,
+    ZipfianGenerator* gen,
+    int num_keys,
+    HashTable* local_ht,
+    HashTable* remote_ht,
+    int local_pct)
+{
+    // seed rng
+    mt19937 rng(random_device{}());
+    uniform_int_distribution<int> op_dist(1, 100);
+    uniform_int_distribution<int> locality_dist(1, 100);
+
+    for (int i = 0; i < num_ops; i++) {
+        // next key
+        uint64_t key_id = gen->Next();
+        string key = "key" + to_string(key_id);
+
+        // roll for locality
+        int locality_choice = locality_dist(rng);
+
+        // define if we're targeting the local or remote hash table
+        HashTable* target_ht;
+        if (locality_choice <= local_pct)
+            target_ht = local_ht;
+        else
+            target_ht = remote_ht;
+
+        // roll for ycsb operation
+        int op_choice = op_dist(rng);
+
+        // perform operation
+        // read case
+        if (op_choice <= cfg->read_pct) {
+            target_ht->getCount(key.c_str());
+        }
+        // update case
+        else if (op_choice <= cfg->read_pct + cfg->update_pct) {
+            target_ht->updateCount(key.c_str(), 1);
+        }
+        // insert case
+        else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct) {
+            target_ht->insert(key.c_str());
+        }
+        // scan case
+        else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct + cfg->scan_pct) {
+            for (int j = 0; j < 10 && (key_id + j) < (uint64_t)num_keys; j++) {
+                string skey = "key" + to_string(key_id + j);
+                target_ht->getCount(skey.c_str());
+            }
+        }
+        // rmw case
+        else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct + cfg->scan_pct + cfg->rmw_pct) {
+            int old = target_ht->getCount(key.c_str());
+            target_ht->updateCount(key.c_str(), 1);
+        }
+    }
+}
+
 int main(int argc, char** argv) {
-    if (argc != 6) {
-        cerr << "Usage: ./ycsb_hashtable [workload] [num_ops] [num_keys] [zipf_theta] [buckets]\n";
+    if (argc != 7) {
+        cerr << "Usage: ./ycsb_hashtable [workload] [num_ops] [num_keys] [zipf_theta] [buckets] [locality]\n";
         return 1;
     }
 
     // command line args
-    // note: too many ops breaks stoi
-    string workload = argv[1];
-    int num_ops   = stoi(argv[2]);
-    int num_keys  = stoi(argv[3]);
-    double theta  = stod(argv[4]);
-    int buckets   = stoi(argv[5]);
+    string workload_key = argv[1];
+    int total_ops       = stoi(argv[2]);
+    int num_keys        = stoi(argv[3]);
+    double theta        = stod(argv[4]);
+    int buckets         = stoi(argv[5]);
+    string locality_key = argv[6];
 
-    // set workload
-    WorkloadConfig cfg = selectWorkload(workload);
+    // configure workload and locality choices
+    WorkloadConfig cfg = selectWorkload(workload_key);
+    int local_pct = selectLocality(locality_key);
 
-    // declare this stuff
-    HashTable ht(buckets); // from HashTable.hpp
-    ZipfianGenerator gen(0, num_keys - 1, theta); // from zipfian_generator.hpp
+    HashTable ht1(buckets);
+    HashTable ht2(buckets);
+    
+    // zipfian generator for each thread to avoid contention
+    ZipfianGenerator gen1(0, num_keys - 1, theta);
+    ZipfianGenerator gen2(0, num_keys - 1, theta);
 
-    // rng to decide what ops to do
-    mt19937 rng(random_device{}());
-    uniform_int_distribution<int> op_dist(1, 100);
-
+    int ops_per_thread = total_ops / 2;
     auto start = chrono::high_resolution_clock::now();
 
-    // use workload percentages to determine what op to use
-    for (int i = 0; i < num_ops; i++) {
-        // get next key from zipfian generator
-        uint64_t key_id = gen.Next();
-        string key = "key" + to_string(key_id);
-
-        // choose op
-        int op_choice = op_dist(rng);
-
-        // read case
-        if (op_choice <= cfg.read_pct) {
-            ht.getCount(key.c_str());
-        }
-        // update case
-        else if (op_choice <= cfg.read_pct + cfg.update_pct) {
-            ht.updateCount(key.c_str(), 1);
-        }
-        // insert case
-        else if (op_choice <= cfg.read_pct + cfg.update_pct + cfg.insert_pct) {
-            ht.insert(key.c_str());
-        }
-        // scan case (short sequential read) (sequential keys in j loop but will stop if goes out of bounds) 
-        else if (op_choice <= cfg.read_pct + cfg.update_pct + cfg.insert_pct + cfg.scan_pct) {
-            for (int j = 0; j < 10 && (key_id + j) < (uint64_t)num_keys; j++) {
-                string skey = "key" + to_string(key_id + j);
-                ht.getCount(skey.c_str());
-            }
-        }
-        // rmw case
-        else if (op_choice <= cfg.read_pct + cfg.update_pct + cfg.insert_pct + cfg.scan_pct + cfg.rmw_pct) {
-            int old = ht.getCount(key.c_str());
-            ht.updateCount(key.c_str(), 1);
-        }
-    }
+    // launch and join threads
+    thread t1(worker_thread, ops_per_thread, &cfg, &gen1, num_keys, &ht1, &ht2, local_pct);
+    thread t2(worker_thread, ops_per_thread, &cfg, &gen2, num_keys, &ht2, &ht1, local_pct);
+    t1.join();
+    t2.join();
 
     auto end = chrono::high_resolution_clock::now();
     chrono::duration<double> elapsed = end - start;
-    cout << num_ops << " ops in " << elapsed.count() << "s\n";
+    cout << total_ops << " ops on 2 threads with " << locality_key << " locality completed in " << elapsed.count() << "s\n";
     return 0;
 }
