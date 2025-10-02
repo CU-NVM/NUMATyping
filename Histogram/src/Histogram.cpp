@@ -155,15 +155,15 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
     pthread_barrier_wait(&bar);
 
     //PHASE 1: Each thread reads its portion of the file
-    auto __p1_start = clock::now();
 
-    std::string file_name = "../book/"+filename;
-    std::ifstream file("../book/"+file_name);
+    std::string home = std::getenv("HOME"); 
+    std::string file_name = home + "/NUMATyping/book/"+filename;
+    std::ifstream file(file_name);
     if(!file.is_open()) {
         std::cerr << "Error opening file: " << file_name << std::endl;
         return;
     }
-
+    auto __p1_start = clock::now();
     std::string word;
     while(file >> word) {
         if(node == 0) {

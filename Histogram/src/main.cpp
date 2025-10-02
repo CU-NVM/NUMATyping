@@ -231,7 +231,8 @@ static struct option long_options[] = {
 
 
 bool process_file(string book_title, int num_threads){
-	string filename = "../book/" + book_title + ".txt";
+	std::string home = std::getenv("HOME"); 
+	string filename = home + "/NUMATyping/book/" + book_title + ".txt";
 	if (num_threads <= 0) { std::cerr << "num_threads must be > 0\n"; return false; }
 
 	std::ifstream in(filename);
@@ -256,8 +257,8 @@ bool process_file(string book_title, int num_threads){
 	std::string stem = inpath.stem().string();   // "filename"
 	const std::string ext = ".txt";              // force .txt
 
-	// Ensure ../book exists, then delete all *.txt inside it
-	fs::path out_dir = fs::path("..") / "book/per_thread";
+	// Ensure $HOME/NUMATyping/book exists, then delete all *.txt inside it
+	fs::path out_dir = fs::path(home + "/NUMATyping/book") / "per_thread";
 	try {
 		fs::create_directories(out_dir); // no-op if exists
 		for (const auto& entry : fs::directory_iterator(out_dir)) {
@@ -271,7 +272,7 @@ bool process_file(string book_title, int num_threads){
 			}
 		}
 	} catch (const fs::filesystem_error& e) {
-		std::cerr << "Error preparing ../book: " << e.what() << "\n";
+		std::cerr << "Error preparing $HOME/NUMATyping/book: " << e.what() << "\n";
 		return false;
 	}
 
