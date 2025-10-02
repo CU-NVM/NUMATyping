@@ -25,7 +25,7 @@ using namespace std;
 
 string thread_config;
 string DS_config;
-int num_threads = 0;
+int num_threads = 1;
 int duration = 0;
 int run_freq = 1;
 int interval =20;
