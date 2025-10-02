@@ -23,15 +23,10 @@
 #include <sstream>
 #include <unordered_map>
 #include "timing.h"
+#include "numatype.hpp"
+#include "numathreads.hpp"
 // #include "umf_numa_allocator.hpp"
 
-#ifdef NUMA_MACHINE
-    #define NODE_ZERO 0
-    #define NODE_ONE 1
-#else
-    #define NODE_ZERO 0
-    #define NODE_ONE 0
-#endif
 
 using namespace std::chrono;
 
@@ -74,8 +69,8 @@ void numa_histogram_single_init(int num_threads, std::string DS_config, int buck
     for(int i = 0; i < num_threads; i++) {
         if(DS_config == "numa") {
             // For NUMA allocation, create with default constructor
-            HashTables0[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ZERO>(bucket_count));
-            HashTables1[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ONE>(bucket_count));
+            HashTables0[i] = reinterpret_cast<HashTable*>(new numa<HashTable, 0>(bucket_count));
+            HashTables1[i] = reinterpret_cast<HashTable*>(new numa<HashTable, 1>(bucket_count));
             HashTable_lk0[i] = new mutex();
             HashTable_lk1[i] = new mutex();
         }
@@ -105,7 +100,7 @@ void numa_histogram_init(int num_threads, std::string DS_config, int bucket_coun
 
         for(int i = 0; i < num_threads; i++) {
             if(DS_config == "numa") {
-                HashTables0[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ZERO>(bucket_count));
+                HashTables0[i] = reinterpret_cast<HashTable*>(new numa<HashTable, 0>(bucket_count));
                 HashTable_lk0[i] = new mutex();
             }
             else {
@@ -119,7 +114,7 @@ void numa_histogram_init(int num_threads, std::string DS_config, int bucket_coun
         HashTable_lk1.resize(num_threads);
         for(int i = 0; i < num_threads; i++) {
             if(DS_config == "numa") {
-                HashTables1[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ONE>(bucket_count));
+                HashTables1[i] = reinterpret_cast<HashTable*>(new numa<HashTable, 1>(bucket_count));
                 HashTable_lk1[i] = new mutex();
             }
             else {

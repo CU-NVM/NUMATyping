@@ -1,8 +1,10 @@
-numa-clang-tool/build/
-unified-memory-framework/build/
+numa-clang-tool/build/*
+unified-memory-framework/build/*
 *.o
-*
-!*/
-!*.*
+*.txt
+*.out
+Histogram/bin/*
+
+
 
 

@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include "numathreads.hpp"
 
 using namespace std;
 

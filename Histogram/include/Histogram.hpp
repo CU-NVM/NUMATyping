@@ -12,8 +12,8 @@
 
 
 #include <string>
-#include "numatype.hpp"
-#include "numathreads.hpp"
+// #include "numatype.hpp"
+// #include "numathreads.hpp"
 #include <jemalloc/jemalloc.h>
 #include <umf/pools/pool_jemalloc.h>
 using namespace std;
