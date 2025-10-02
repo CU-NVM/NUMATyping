@@ -13,6 +13,13 @@
 #include <stdexcept>
 #include <iostream>
 #include <cassert>
+#include <umf/mempolicy.h>
+#include <umf/memspace.h>
+#include "utils_examples.h"
+#include "umf_numa_allocator.hpp"
+
+
+
 template <typename T, int NodeID>
 class NumaAllocator {
 public:
@@ -35,7 +42,12 @@ public:
 
     pointer allocate(size_type n) {
         //std::cout << "Allocated on numa node: " << NodeID <<std::endl;
-        void* p = numa_alloc_onnode(n * sizeof(T), NodeID);
+        #ifdef UMF
+            std::cout << "Allocating with UMF on node " << NodeID << std::endl;
+            void* p = umf_alloc(NodeID, n * sizeof(T), alignof(T));
+        #else
+            void* p = numa_alloc_onnode(n * sizeof(T), NodeID);
+        #endif
         if (p == nullptr) {
             throw std::bad_alloc();
         }
@@ -43,7 +55,11 @@ public:
     }
 
     void deallocate(pointer p, size_type n) noexcept {
-        numa_free(p, n * sizeof(T));
+        #ifdef UMF
+            umf_free(NodeID,p);
+        #else
+            numa_free(p, n * sizeof(T));
+        #endif
     }
 
     template <typename U, typename... Args>                                     //What is this??
@@ -82,7 +98,7 @@ class numa; // declaration of full numa type
 
 
 // primitive numa
-template<typename T, int NodeID, template <typename, int> class Alloc>
+template<typename T, int NodeID, template <typename, int> class Alloc >
 class numa<T,NodeID, Alloc, typename std::enable_if<(std::is_fundamental<T>::value|| std::is_pointer<T>::value)>::type>{
 public:
 	T contents;
@@ -139,9 +155,15 @@ template<typename T, int NodeID, template <typename, int> class Alloc>
 class numa<T,NodeID, Alloc, typename std::enable_if<!(std::is_fundamental<T>::value || std::is_pointer<T>::value)>::type>: public T{
 public:
     numa(){
-        //std::cout<<"numa constructor called"<<std::endl;
+        #ifdef UMF
+            printf("Default constructor called for numa<%s,%d>\n", typeid(T).name(), NodeID);
+        #endif
         //assert(false && "This constructor should never get called");
     }    
+    template<typename... Args>
+    explicit numa(Args&&... args)
+        : T(std::forward<Args>(args)...) {}
+
 };
 
 #endif

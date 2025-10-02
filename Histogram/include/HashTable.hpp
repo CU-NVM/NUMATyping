@@ -1,4 +1,5 @@
 #include "HashNode.hpp"
+#include "numatype.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
