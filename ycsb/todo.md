@@ -1,10 +1,10 @@
 1. ~~make benchmark threaded~~
-2. ~~have an array of hashtables concurrent hashtable with lock
-hash into the hash table and theres a lock per hash table~~  
-did not implement exactly like this but seems to work will change later if needed
+2. ~~have an array of hashtables concurrent hashtable with lock~~
+~~hash into the hash table and theres a lock per hash table~~  
+~~did not implement exactly like this but seems to work will change later if needed~~
 3. ~~80/20 local vs remote ops~~
-4. make ttas lock instead of mutex
-5. remove lock from zipfian generator
+4. ~~make ttas lock instead of mutex~~
+~~5. remove lock from zipfian generator~~
 6. make the generator thread local 
 7. copy histogram structure
 - all include files go into include directory

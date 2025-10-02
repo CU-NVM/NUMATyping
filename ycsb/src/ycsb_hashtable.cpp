@@ -1,6 +1,6 @@
-#include "zipf_base/src/zipfian_generator.h"
-#include "zipf_base/src/ycsbutils.h"
-#include "include/HashTable.hpp"
+#include "../zipf_base/src/zipfian_generator.h"
+#include "../zipf_base/src/ycsbutils.h"
+#include "../include/HashTable.hpp"
 #include <iostream>
 #include <sstream>
 #include <chrono>

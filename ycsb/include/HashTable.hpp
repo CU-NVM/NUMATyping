@@ -1,15 +1,15 @@
 #include "HashNode.hpp"
+#include "ttas.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
-#include <mutex>
 
 using namespace std;
 
 class HashTable {
     HashNode** table;
     int bucket_count;
-    std::vector<std::mutex> bucket_locks; // lock for each bucket
+    std::vector<Ttas> bucket_locks; // lock for each bucket
 
     int hash(const char* key);
 public:
@@ -54,7 +54,7 @@ int HashTable::hash(const char* key) {
 
 void HashTable::insert(const char* word){
     int idx = hash(word);
-    std::lock_guard<std::mutex> lock(bucket_locks[idx]); // lock (lock_guard will unlock when function completes)
+    bucket_locks[idx].lock(); // lock
 
     HashNode* curr = table[idx];
     while(curr){
@@ -67,11 +67,12 @@ void HashTable::insert(const char* word){
     HashNode* newNode = new HashNode(word);
     newNode->next = table[idx];
     table[idx] = newNode;
+    bucket_locks[idx].unlock(); // unlock
 }
 
 void HashTable::remove(const char* word){
     int idx = hash(word);
-    std::lock_guard<std::mutex> lock(bucket_locks[idx]); // lock
+    bucket_locks[idx].lock(); // lock
 
     HashNode* curr = table[idx];
     HashNode* prev = nullptr;
@@ -88,11 +89,12 @@ void HashTable::remove(const char* word){
         prev = curr;
         curr = curr->next;
     }
+    bucket_locks[idx].unlock(); // unlock
 }
 
 int HashTable::getCount(const char* word){
     int idx = hash(word);
-    std::lock_guard<std::mutex> lock(bucket_locks[idx]); // lock
+    bucket_locks[idx].lock(); // lock
 
     HashNode* curr = table[idx];
     while(curr){
@@ -101,12 +103,13 @@ int HashTable::getCount(const char* word){
         }
         curr = curr->next;
     }
+    bucket_locks[idx].unlock(); // unlock
     return 0;
 }
 
 bool HashTable::updateCount(const char* word, int count){
     int idx = hash(word);
-    std::lock_guard<std::mutex> lock(bucket_locks[idx]); // lock
+    bucket_locks[idx].lock(); // lock
     
     HashNode* curr = table[idx];
     while(curr){
@@ -116,17 +119,19 @@ bool HashTable::updateCount(const char* word, int count){
         }
         curr = curr->next;
     }
+    bucket_locks[idx].unlock(); // unlock
     return false;
 }
 
 
 void HashTable::printAll(){
     for(int i = 0; i < bucket_count; i++) {
-        std::lock_guard<std::mutex> lock(bucket_locks[i]); // lock
+        bucket_locks[i].lock(); // lock
         HashNode* curr = table[i];
         while(curr){
             std::cout << curr->key << ": " << curr->count << std::endl;
             curr = curr->next;
         }
+        bucket_locks[i].unlock(); // unlock
     }
 }
