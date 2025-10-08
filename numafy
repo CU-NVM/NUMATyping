@@ -11,6 +11,7 @@ show_help() {
 NUMA-aware C++ Transformation Tool
 Author: Kidus Workneh
 
+
 USAGE:
     ./numafy [SUITE] [CLANG_VERSION] [OPTIONS]
     ./numafy --help
