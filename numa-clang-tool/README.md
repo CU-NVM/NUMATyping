@@ -15,13 +15,13 @@ cmake --build .
 ## Usage
 
 ```bash
-cp -rf ../Exprs ./input
-sudo run.sh Exprs
+cp -rf $BENCHMARK_PATH ./input
+numafy $BENCHMARK $CLANG_VERSION
 ```
-The ```run.sh``` script has the command on how to run the specified  benchmark in this case ```Exprs```.
+The ```numafy``` script has the command on how to run the specified  benchmark in this case 
 
 
 ## Description
-* The compiler binary is in ./build/bin/clang-tool
+* The clang-tool binary is in ./build/bin/clang-tool
 * The  --numa flag is a pass to recursivley add specialized numa types according to programmer annotaiton
 * The --cast flag is a pass to force new allocations in numa typed classes to be on a the desired numa node and finally cast the pointer returned to the appropriate type

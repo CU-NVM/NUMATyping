@@ -11,11 +11,9 @@
 #include "Queue.hpp"
 #include "BinarySearch.hpp"
 #include "LinkedList.hpp"
-// #include "numatype.hpp"
 #include <random>
 #include <iostream>
 #include <thread>
-// #include <barrier>
 #include <mutex>
 #include <syncstream>
 #include <chrono>
@@ -300,7 +298,6 @@ void numa_LL_init(std::string DS_config, int num_DS, bool prefill){
 		}
 	}
 }
-
 
 void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int node, int crossover){
 	BSTs0.resize(num_DS);

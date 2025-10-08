@@ -60,17 +60,11 @@ This command copies the Exprs benchmark into the ```numa-clang-tool``` folder, c
 *to-do: make this part of the runExperiments.py script
 
 ```bash
-cp -rf Exprs numa-clang-tool/input
+./numafy [BENCHMARK] [CLANG-VERSION]
 
-cd numa-clang-tool
+cd Output/[BENCHMARK]
 
-sudo ./run.sh Exprs
-
-cp -rf output2/Exprs ../Output
-
-cd ../Output/Exprs
-
-sudo make UMF=1 
+make UMF=1 
 
 numactl --cpunodebind=0,1 --membind=0,1 python3 meta.py ./Examples/bin/DSExample --meta n:1000000 --meta t:40:80 --meta D:800 --meta DS_name:bst --meta th_config:numa:regular:reverse --meta DS_config:numa:regular --meta k:160  --meta i:10 >> ../../Result/BST_Transactions.csv
 ```

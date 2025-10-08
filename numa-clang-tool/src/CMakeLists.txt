@@ -16,18 +16,20 @@ message(LLVM_COMPILE_FLAGS="${LLVM_COMPILE_FLAGS}")
 set(CLANG_TOOL_SRC
 
         main.cc
-        
-        actions/frontendaction.cc
-        actions/cast_frontendaction.cc
-        consumer/consumer.cc
-        consumer/cast_consumer.cc
+
+        actions/recurseFrontendAction.cc
+        actions/castFrontendAction.cc
+        consumer/recurseConsumer.cc
+        consumer/castConsumer.cc
         #inclusiondirective/inclusiondirective.cc
         utils/utils.cc
-        
+        casting/reinterprete_cast.cc
+        numafy/new_allocs.cc
         transformer/transformer.cc
         # transformer/functioncalltransformer.cc
         transformer/RecursiveNumaTyper.cc
-        transformer/NumaTargetNumaPointer.cc
+        transformer/CastNumaAlloc.cc
+
         # finder/finder.cc
         # finder/integervariablefinder.cc
 )
