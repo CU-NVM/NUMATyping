@@ -39,7 +39,7 @@ class RecursiveNumaTyper : public Transformer
 
         virtual void start() override;
         virtual void print(clang::raw_ostream &stream) override;
-        virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &result);
+        virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &result)override;
 
         bool NumaDeclExists(const clang::ASTContext &Context, QualType FirstTemplateArg, llvm::APInt SecondTemplateArg);
         void addAllSpecializations(const clang::ASTContext &Context);

@@ -96,7 +96,7 @@ void CastNumaAlloc::castNewExprOCE(clang::CXXNewExpr* CXXNewExpr , const clang::
     // llvm::outs()<<"FOUND TYPE FROM CASTNEWEXPR: "<<FoundType->getNameAsString()<<"\n";
     std::string NewType = CXXNewExpr->getAllocatedType().getAsString();
     std::string CastType = CXXNewExpr->getType().getAsString();
-    if(!NewType.substr(0,4).compare("numa") == 0){
+    if(NewType.substr(0,4).compare("numa") != 0){
         auto &SM = rewriter.getSourceMgr();
         auto &LO = rewriter.getLangOpts();
         numafyAndReinterpreteCast(rewriter, SM, LO, CXXNewExpr, FoundInt);
@@ -127,6 +127,6 @@ void CastNumaAlloc::printCandidateTemplateSpecializations(const clang::ASTContex
     return;
 }
 
-void CastNumaAlloc::print(clang::raw_ostream &stream){
+void CastNumaAlloc::print(llvm::raw_ostream &stream){
 
 }

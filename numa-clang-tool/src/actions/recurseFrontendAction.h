@@ -18,7 +18,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 #include "../consumer/recurseConsumer.h"
-#include "../inclusiondirective/inclusiondirective.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -34,7 +33,7 @@ public:
   //void EndSourceFileAction() override;
 private:
   clang::Rewriter TheRewriter;
-  IncludeTracker* TheIncludeTracker;
+
 };
 
 

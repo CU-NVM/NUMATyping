@@ -48,8 +48,8 @@ class CastNumaAlloc : public Transformer
         explicit CastNumaAlloc(clang::ASTContext &context, clang::Rewriter &rewriter);
 
         virtual void start() override;
-        virtual void print(clang::raw_ostream &stream) override;
-        virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &result);
+        virtual void print(llvm::raw_ostream &stream) override;
+        virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &result)override;
         void introspectMethods(clang::CXXMethodDecl* method, const clang::CXXRecordDecl* FoundType, llvm::APSInt FoundInt, clang::ASTContext &context, RecursiveNumaTyper* RecursiveNumaTyper);
         void castNewExprOCE(clang::CXXNewExpr* NewType,  const clang::CXXRecordDecl* FoundType, llvm::APSInt FoundInt, clang::SourceLocation rewriteLocation, clang::ASTContext &context, RecursiveNumaTyper* RecursiveNumaTyper);
         void printCandidateTemplateSpecializations(const clang::ASTContext& context);

@@ -35,7 +35,7 @@ namespace utils
     class NewExprInBinaryOperatorVisitor : public RecursiveASTVisitor<NewExprInBinaryOperatorVisitor>
     {
     public:
-        explicit NewExprInBinaryOperatorVisitor(const clang::ASTContext *Context) : Context(Context) {}
+        explicit NewExprInBinaryOperatorVisitor(const clang::ASTContext *Context) {}
         bool VisitBinaryOperator(BinaryOperator *BO)
         {
             if (const Expr *RHS = BO->getRHS()) {
@@ -53,7 +53,7 @@ namespace utils
 
 
                 if (const CXXNewExpr *NewExpr = dyn_cast<CXXNewExpr>(RHS->IgnoreParenImpCasts())) {
-                    QualType allocatedType = NewExpr->getAllocatedType();
+
                     if ((NewExpr->getType().getAsString().substr(0, 4).compare("numa") == 0)|| (original_type.substr(0,4).compare("numa")==0))
                     {
                         const Expr *LHS = BO->getLHS();
@@ -71,13 +71,13 @@ namespace utils
     private:
         std::map<const CXXNewExpr *, QualType> CXXNewExprs;
         // std::string original_type;
-        const ASTContext *Context;
+        
     };
 
     
     class DeclStmtVisitor : public RecursiveASTVisitor<DeclStmtVisitor>{
     public:
-        explicit DeclStmtVisitor(const clang::ASTContext *Context) : Context(Context) {}
+        explicit DeclStmtVisitor(const clang::ASTContext *Context) {}
         bool VisitDeclStmt(DeclStmt *DS) {
             DeclStmts.push_back(DS);
             return true;
@@ -86,7 +86,7 @@ namespace utils
         void clearDeclStmts() { DeclStmts.clear(); }
     private:
         std::vector<DeclStmt*> DeclStmts;
-        const ASTContext *Context;
+        
     };
 
     bool fileExists(const std::string &file);
@@ -94,7 +94,7 @@ namespace utils
 
     class CompoundStmtVisitor : public RecursiveASTVisitor<CompoundStmtVisitor>{
         public:
-            explicit CompoundStmtVisitor(const clang::ASTContext *Context) : Context(Context) {}
+            explicit CompoundStmtVisitor(const clang::ASTContext *Context){}
             bool VisitCompoundStmt(CompoundStmt *CD) {
                 CompoundStmts.push_back(CD);
                 return true;
@@ -103,12 +103,12 @@ namespace utils
             void clearCompoundStmts() { CompoundStmts.clear(); }
         private:
             std::vector<CompoundStmt*> CompoundStmts;
-            const ASTContext *Context;
+            
     };
 
     class CXXNewExprVisitor : public RecursiveASTVisitor<CXXNewExprVisitor>{
     public:
-        explicit CXXNewExprVisitor(const clang::ASTContext *Context) : Context(Context) {}
+        explicit CXXNewExprVisitor(const clang::ASTContext *Context)  {}
         bool VisitCXXNewExpr(CXXNewExpr *NE) {
             CXXNewExprs.push_back(NE);
             SourceLocation Loc = NE->getBeginLoc();
@@ -121,12 +121,12 @@ namespace utils
     private:
         std::vector<CXXNewExpr*> CXXNewExprs;
         std::vector<SourceLocation> CXXNewExprLocs;
-        const ASTContext *Context;
+        
     };
 
     class AssignmentOperatorCallVisitor :public RecursiveASTVisitor<AssignmentOperatorCallVisitor>{
     public:
-        explicit AssignmentOperatorCallVisitor(const clang::ASTContext *Context) : Context(Context) {}
+        explicit AssignmentOperatorCallVisitor(const clang::ASTContext *Context){}
         bool VisitCXXOperatorCallExpr(CXXOperatorCallExpr *OCE){
             // if(OCE->isLValue()){
             AssignmentOperatorCallExprs.push_back(OCE);
@@ -142,12 +142,12 @@ namespace utils
     private:
         std::vector<CXXOperatorCallExpr*> AssignmentOperatorCallExprs;
         std::vector<SourceLocation> AssignmentOperatorCallExprLocs;
-        const ASTContext *Context;
+        
     };
 
     class MemberExprVisitor : public RecursiveASTVisitor<MemberExprVisitor>{
     public:
-        explicit MemberExprVisitor(const clang::ASTContext *Context) : Context(Context) {}
+        explicit MemberExprVisitor(const clang::ASTContext *Context){}
         bool VisitMemberExpr(MemberExpr *ME) {
             MemberExprs.push_back(ME);
             return true;
@@ -156,14 +156,14 @@ namespace utils
         void clearMemberExprs() { MemberExprs.clear(); }
     private:
         std::vector<MemberExpr*> MemberExprs;
-        const ASTContext *Context;
+        
     };
 
 
     class VarDeclVisitor : public RecursiveASTVisitor<VarDeclVisitor>
     {
     public:
-        explicit VarDeclVisitor(const clang::ASTContext *Context) : Context(Context) {}
+        explicit VarDeclVisitor(const clang::ASTContext *Context){}
         bool VisitVarDecl(VarDecl *VD) {
             VarDecls.push_back(VD);
             return true;
@@ -172,7 +172,7 @@ namespace utils
         void clearVarDecls() { VarDecls.clear(); }
     private:
         std::vector<VarDecl*> VarDecls;
-        const ASTContext *Context;
+        
     };
 
 

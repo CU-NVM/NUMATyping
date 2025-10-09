@@ -4,7 +4,6 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include "clang/Lex/Preprocessor.h"
 #include "../consumer/castConsumer.h"
-#include "../inclusiondirective/inclusiondirective.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/AST/AST.h"
@@ -13,7 +12,6 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Basic/SourceManager.h"
-//#include "../inclusiondirective/Excludeheader.h"
 
 
 

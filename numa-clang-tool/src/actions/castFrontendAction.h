@@ -17,7 +17,6 @@
 #include "clang/Basic/Diagnostic.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
-#include "../inclusiondirective/inclusiondirective.h"
 #include "clang/CodeGen/CodeGenAction.h"
 #include "llvm/IR/Module.h"
 // #include "clang/lib/CodeGen/CodeGenModule.h"
@@ -50,7 +49,6 @@ public:
   //void EndSourceFileAction() override;
 private:
   clang::Rewriter TheRewriter;
-  IncludeTracker* TheIncludeTracker;
 };
 
 

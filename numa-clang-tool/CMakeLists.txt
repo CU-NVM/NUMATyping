@@ -4,7 +4,7 @@ project(clang-tool)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 
 execute_process (
-    COMMAND bash -c "clang++ -std=c++20 -march=native -pthread -E -g -x c++ -v < /dev/null 2>&1 | grep "lib/clang" | awk '{{print $1}}' | grep include
+    COMMAND bash -c "clang++ -std=c++20 -march=native -pthread -E -g -x c++ - -v < /dev/null 2>&1 | grep "lib/clang" | awk '{{print $1}}' | grep include
 /usr/local/lib/clang/20/include"
     OUTPUT_VARIABLE clangBuiltInIncludePath
 )
@@ -13,6 +13,5 @@ file(WRITE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/builtInInclude.path" "${clangBuilt
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 add_subdirectory(src)
-
 
 
