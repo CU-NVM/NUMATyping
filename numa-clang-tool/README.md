@@ -8,7 +8,7 @@ Install the necessary llvm and clang headers and libraries for you system an run
 cd numa-clang-tool
 mkdir build
 cd build
-cmake ..
+cmake .. -DCLANG_VER=21
 cmake --build .
 ```
 
