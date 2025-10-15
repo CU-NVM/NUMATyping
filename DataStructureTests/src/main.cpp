@@ -249,7 +249,6 @@ int main(int argc, char *argv[])
         }
     }
 
-	print_function(0, 0 ,0, 0);
     
 	numa_thread0.resize(num_threads);
 	numa_thread1.resize(num_threads);
@@ -268,7 +267,6 @@ int main(int argc, char *argv[])
 	
 
 	for(int i=0; i < run_freq; i++){
-		std::cout<<" About to run BST test "<< i+1 << " out of " << run_freq << " times"<<std::endl;
 		main_BST_test(duration, num_DS, num_threads, crossover, keyspace);
 	}
 	int64_t sum0 = 0;
