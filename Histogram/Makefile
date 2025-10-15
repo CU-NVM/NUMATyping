@@ -1,13 +1,14 @@
 CC=clang++
+CXX=clang++
 HOME_DIR := $(shell echo $$HOME)
 
 # Turn sanitizers on everywhere (compile + link)
 SANITIZE = -fsanitize=address,undefined -fno-omit-frame-pointer
 
 LINK_FLAGS = -std=c++20 -pthread  -lnuma
-INC_DIRS   = -I../include/ -I../util/ -I$(HOME_DIR)/NUMATyping/numaLib
+INC_DIRS   = -Iinclude/ -Iutil/ -I$(HOME_DIR)/NUMATyping/numaLib
 UMF_INC_DIRS =
-EXE=../bin/histogram
+EXE=./bin/histogram
 OBJS=main.o Histogram.o
 
 UMF =
@@ -30,17 +31,17 @@ endif
 all: $(EXE)
 
 $(EXE): $(OBJS)
-	$(CC) $(OBJS) $(LINK_FLAGS) -o $(EXE)
+	$(CXX) $(OBJS) $(LINK_FLAGS) -o $(EXE)
 
-CXXFLAGS_COMMON = -O3 -g -std=c++20 -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)
+CXXFLAGS_COMMON = -O0 -g -std=c++20 -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)
 #-fno-strict-aliasing \
                   -fno-vectorize -fno-unroll-loops $(SANITIZE)
 
-main.o: main.cpp
-	$(CC) -c $(CXXFLAGS_COMMON) -D_NODE_HPP=1 -DPIN_INIT=1 main.cpp
+main.o: src/main.cpp
+	$(CXX) -c $(CXXFLAGS_COMMON) -D_NODE_HPP=1 -DPIN_INIT=1 src/main.cpp
 
-Histogram.o: Histogram.cpp
-	$(CC) -c $(CXXFLAGS_COMMON) Histogram.cpp
+Histogram.o: src/Histogram.cpp
+	$(CXX) -c $(CXXFLAGS_COMMON) src/Histogram.cpp
 
 clean:
 	rm -f *.o $(EXE)

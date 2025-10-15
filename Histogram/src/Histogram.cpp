@@ -164,7 +164,12 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
         std::cerr << "Error opening file: " << file_name << std::endl;
         return;
     }
-    auto __p1_start = clock::now();
+
+    #ifdef PER_THREAD_TIMING
+        auto __p1_start = clock::now();
+    #endif
+    auto phase1_start = clock::now();
+
     std::string word;
     while(file >> word) {
         if(node == 0) {
@@ -176,13 +181,22 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
     }
     file.close();
 
-    time(tid, "Phase1Lat", __p1_start);
+    #ifdef PER_THREAD_TIMING
+        time(tid, "Phase1Lat", __p1_start);
+    #endif
 
+    pthread_barrier_wait(&bar);
+    if(tid == 0 && node == 0) {
+        stopwatch("Phase1Total", phase1_start);
+    }
     pthread_barrier_wait(&bar);
 
     /******************************* PHASE 2: Merging the tables on each node ********************************/
 
-    auto __p2_start = clock::now();
+    #ifdef PER_THREAD_TIMING
+        auto __p2_start = clock::now();
+    #endif
+    auto phase2_start = clock::now();
 
     //Merge the tables on each node into a single table on HashTables0[0] and HashTables1[0]
     if(tid == 0 || tid == num_threads/2) {
@@ -222,12 +236,21 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
         }
     }
 
-    time(tid, "Phase2Lat", __p2_start);
+    #ifdef PER_THREAD_TIMING
+        time(tid, "Phase2Lat", __p2_start);
+    #endif
 
     pthread_barrier_wait(&bar);
-  
+    if(tid == 0 && node == 0) {
+        stopwatch("Phase2Total", phase2_start);
+    }
+    pthread_barrier_wait(&bar);
     /******************************** PHASE 3.1: Merging the tables across nodes using only thread 0 of node 0 *******************************/
-    auto __p31_start = clock::now();
+    #ifdef PER_THREAD_TIMING
+        auto __p31_start = clock::now();
+    #endif
+    auto phase31_start = clock::now();
+
     //Only thread 0 of node 0 merges HashTables 1[0] into HashTables0[0]
     if(tid == 0 && node == 0) {
         for(int i = 1; i < num_threads; i++) {
@@ -246,10 +269,15 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
         }
     }
 
-    time(tid, "Phase3.1Lat", __p31_start);
+    #ifdef PER_THREAD_TIMING
+        time(tid, "Phase3.1Lat", __p31_start);
+    #endif
 
     pthread_barrier_wait(&bar);
-
+    if(tid == 0 && node == 0) {
+        stopwatch("Phase3.1Total", phase31_start);
+    }
+    pthread_barrier_wait(&bar);
 
     std::vector<char*> allKeys = HashTables1[0]->getAllKeys();
     thread_local std::vector<char*> myKeys;
@@ -262,8 +290,11 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
     }
 
     /******************************** PHASE 3.2: Merging the tables across nodes using threads on node 0 ********************************/
-    auto __p32_start = clock::now();
 
+    #ifdef PER_THREAD_TIMING
+        auto __p32_start = clock::now();
+    #endif
+    auto phase32_start = clock::now();
     if(node == 0) {
         for(auto key : myKeys) {
             int count = HashTables1[0]->getCount(key);
@@ -281,9 +312,15 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
             }
         }
     }
-    
-    time(tid, "Phase3.2Lat", __p32_start);
 
+    #ifdef PER_THREAD_TIMING
+        time(tid, "Phase3.2Lat", __p32_start);
+    #endif
+
+    pthread_barrier_wait(&bar);
+    if(tid == 0 && node == 0) {
+        stopwatch("Phase3.2Total", phase32_start);
+    }
     pthread_barrier_wait(&bar);
 
     //divide the keys among threads equally and store them in a thread local vector]
@@ -293,8 +330,11 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
     }
 
     /******************************** PHASE 3.3: Merging the tables across nodes using threads all threads on both nodes ********************************/
-    auto __p33_start = clock::now();
 
+    #ifdef PER_THREAD_TIMING
+        auto __p33_start = clock::now();
+    #endif
+    auto phase33_start = clock::now();
     if(node == 0) {
         for(auto key : myKeys) {
             int count = HashTables1[0]->getCount(key);
@@ -330,13 +370,20 @@ void histogram_test(int tid, int duration, int node, int num_threads, std::strin
         }
     }
 
-    time(tid, "Phase3.3Lat", __p33_start);
+    #ifdef PER_THREAD_TIMING
+        time(tid, "Phase3.3Lat", __p33_start);
+    #endif
+    
     pthread_barrier_wait(&bar);
 
-    
+    if(tid == 0 && node == 0) {
+        stopwatch("Phase3.3Total", phase33_start);
+    }
+
+    pthread_barrier_wait(&bar);
+
     // if(tid == 0) {
     //     //print the histogram to std out
     //     HashTables0[0]->printAll();
     // }
-
 }
