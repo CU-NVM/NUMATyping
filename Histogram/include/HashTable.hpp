@@ -10,11 +10,11 @@ class HashTable{
     HashNode** table;
     int bucket_count;
 
-    int hash(const char* key);
+   
 public:
     HashTable(int buckets);
     ~HashTable();
-
+    int hash(const char* key);
     void insert(const char* key);
     void remove(const char* key);
     int getCount(const char* key);
@@ -25,7 +25,8 @@ public:
 };
 
 
-HashTable::HashTable(int buckets) : bucket_count(buckets) {
+HashTable::HashTable(int buckets) {
+    bucket_count = buckets;
     table = new HashNode*[bucket_count];
     for(int i = 0; i < bucket_count; i++) {
         table[i] = nullptr;

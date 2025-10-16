@@ -43,7 +43,6 @@ public:
     pointer allocate(size_type n) {
         //std::cout << "Allocated on numa node: " << NodeID <<std::endl;
         #ifdef UMF
-            std::cout << "Allocating with UMF on node " << NodeID << std::endl;
             void* p = umf_alloc(NodeID, n * sizeof(T), alignof(T));
         #else
             void* p = numa_alloc_onnode(n * sizeof(T), NodeID);

@@ -1,9 +1,19 @@
+/**
+ * @file main.cc
+ * @brief Main entry point for the NUMA-aware C++ transformation tool
+ * @author Kidus Workneh
+ * 
+ * This tool provides automated NUMA-aware code transformations using Clang's
+ * LibTooling infrastructure. It supports multiple transformation passes for
+ * optimizing C++ code for NUMA architectures.
+ */
+
 #include <llvm/Support/CommandLine.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang-c/Index.h>
 #include <iostream>
-#include "actions/frontendaction.h"
-#include "actions/cast_frontendaction.h"
+#include "actions/recurseFrontendAction.h"
+#include "actions/castFrontendAction.h"
 #include "utils/utils.h"
 #include "clang/Tooling/Tooling.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -27,11 +37,9 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
-
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Basic/SourceManager.h"
-
 
 using namespace std;
 using namespace llvm;
@@ -39,76 +47,23 @@ using namespace clang;
 using namespace clang::tooling;
 using namespace llvm::cl;
 
+// ============================================================================
+// Command Line Options Setup
+// ============================================================================
 
-// Apply a custom category to all command-line options so that they are the
-// only ones displayed.
+/** @brief Custom category for tool-specific command line options */
 static cl::OptionCategory MyToolCategory("my-tool options");
 
-// CommonOptionsParser declares HelpMessage with a description of the common
-// command-line options related to the compilation database and input files.
-// It's nice to have this help message in all tools.
+/** @brief Standard help message for compilation database options */
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 
-// A help message for this specific tool can be added afterwards.
+/** @brief Additional help text for this specific tool */
 static cl::extrahelp MoreHelp("\nMore help text...\n");
 
-std::vector<std::string> benchmarks = {"Exprs","STExprs"};
-
-
-void registerBenchmarks(){
-    for(auto &benchmark : benchmarks)
-  {
-      std::string directory = "output/" + benchmark;
-      if(utils::fileExists(directory) == true)
-      {
-          //remove everything in the directory
-          std::string command = "rm -rf " + directory + "/*";
-          system(command.c_str());
-      }
-      else
-      {
-          std::string command = "mkdir -p " + directory;
-          system(command.c_str());
-      }
-  }
-
-  //For each benchmark, copy the contents from the input directory to the output directory
-  for(auto &benchmark : benchmarks)
-  {
-      std::string inputDirectory = "input/" + benchmark;
-      std::string outputDirectory = "output/" + benchmark;
-      std::string command = "cp -r " + inputDirectory + "/* " + outputDirectory;
-      system(command.c_str());
-  }
-}
-
-void copyOuputToOutput2(){
-    for(auto &benchmark : benchmarks)
-  {
-      std::string directory = "output2/" + benchmark;
-      if(utils::fileExists(directory) == true)
-      {
-          //remove everything in the directory
-          std::string command = "rm -rf " + directory + "/*";
-          system(command.c_str());
-      }
-      else
-      {
-          std::string command = "mkdir -p " + directory;
-          system(command.c_str());
-      }
-  }
-
-  //For each benchmark, copy the contents from the input directory to the output directory
-  for(auto &benchmark : benchmarks)
-  {
-      std::string inputDirectory = "output/" + benchmark;
-      std::string outputDirectory = "output2/" + benchmark;
-      std::string command = "cp -r " + inputDirectory + "/* " + outputDirectory;
-      system(command.c_str());
-  }
-}
-
+/**
+ * @brief Debug utility to print compilation commands
+ * @param Commands Vector of compile commands to display
+ */
 void print(const std::vector<CompileCommand> &Commands) {
   if (Commands.empty()) {
     return;
@@ -118,57 +73,115 @@ void print(const std::vector<CompileCommand> &Commands) {
   }
 }
 
+// ============================================================================
+// Frontend Action Factory
+// ============================================================================
 
+/**
+ * @brief Creates appropriate frontend action factory based on pass name
+ * @param Name String identifier for the transformation pass
+ * @return Unique pointer to the corresponding frontend action factory
+ */
+static std::unique_ptr<FrontendActionFactory>
+makeFactoryForPass(llvm::StringRef Name) {
+  return llvm::StringSwitch<std::unique_ptr<FrontendActionFactory>>(Name)
+    .Case("recurse", newFrontendActionFactory<RecurseFrontendAction>())  // NUMA class specialization pass
+    .Case("cast",    newFrontendActionFactory<CastFrontendAction>())     // Type casting transformation pass
+    // .Case("yourpass", newFrontendActionFactory<YourPassAction>())     // Template for additional passes
+    .Default(nullptr);
+}
 
+// ============================================================================
+// Main Function
+// ============================================================================
 
-
+/**
+ * @brief Main entry point for the NUMA transformation tool
+ * @param argc Number of command line arguments
+ * @param argv Array of command line argument strings
+ * @return Exit code (0 for success, non-zero for failure)
+ */
 int main(int argc, const char **argv) {
 
-  static cl::OptionCategory ToolCategory("my-clang-tool options");
+    static cl::OptionCategory ToolCat("my-clang-tool options");
 
-  static cl::opt<bool> NUMAFrontendAction(
-      "numa",
-      cl::desc("Run numa frontend action"),
-      cl::cat(ToolCategory)
-  );
+    // ============================================================================
+    // Command Line Interface Options
+    // ============================================================================
 
-  static cl::opt<bool> CastFrontendAction(
-      "cast",
-      cl::desc("Run the cast frontend action"),
-      cl::cat(ToolCategory)
-  );
+    /** @brief Required option to specify which transformation pass to run */
+    static cl::opt<std::string> PassName(
+    "pass",
+    cl::desc("Which pass to run (e.g., recurse, cast)"),
+    cl::value_desc("name"),
+    cl::Required,
+    cl::cat(ToolCat));
 
+    /** @brief Optional list of input files to process */
+    static cl::list<std::string> InputFilesOpt(
+    "input",
+    cl::desc("Comma-separated or repeatable list of input files"),
+    cl::ZeroOrMore,
+    cl::CommaSeparated,
+    cl::value_desc("file1.cpp,file2.cpp,..."),
+    cl::cat(ToolCat));
 
+    /** @brief Alternative positional file arguments */
+    static cl::list<std::string> PositionalFiles(
+    cl::Positional,
+    cl::desc("<source files>"),
+    cl::ZeroOrMore,
+    cl::cat(ToolCat));
 
-  auto ExpectedParser = CommonOptionsParser::create(argc, argv, ToolCategory);
+    // Parse command line arguments with custom category filter
+    auto ExpectedParser = CommonOptionsParser::create(argc, argv, ToolCat);
     if (!ExpectedParser) {
-        llvm::errs() << ExpectedParser.takeError();
+        errs() << toString(ExpectedParser.takeError()) << "\n";
         return 1;
     }
-    CommonOptionsParser& OptionsParser = ExpectedParser.get();
+    CommonOptionsParser &OptionsParser = ExpectedParser.get();
 
-  std::unique_ptr<FrontendActionFactory> Factory;
-  if (NUMAFrontendAction) {
-      registerBenchmarks();
-      Factory = newFrontendActionFactory<NumaFrontendAction>();
-  } else if (CastFrontendAction) {
-      copyOuputToOutput2();
-      Factory = newFrontendActionFactory<CastNumaFrontendAction>();
-  } else {
-      llvm::errs() << "Please specify either --count-functions or --count-classes.\n";
-      return 1;
-  }
+    // ============================================================================
+    // Source File Collection
+    // ============================================================================
 
+    std::vector<std::string> Files;
+    
+    // Prioritize explicit --input flag over positional arguments
+    if (!InputFilesOpt.empty()) {
+        Files.insert(Files.end(), InputFilesOpt.begin(), InputFilesOpt.end());
+    } else {
+        // Fallback to positional files or compile_commands.json entries
+        auto Pos = OptionsParser.getSourcePathList();
+        Files.insert(Files.end(), Pos.begin(), Pos.end());
+    }
 
-  ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
-  //return Tool.run(newFrontendActionFactory(&Finder).get());
+    // Handle case where no files are specified
+    if (Files.empty()) {
+        llvm::errs() << "warning: no --input or positional file; "
+                            "using dummy file to satisfy parser.\n";
+        // Attempt to use files from compilation database
+        auto DBFiles = OptionsParser.getSourcePathList();
+        if (!DBFiles.empty())
+        Files.push_back(DBFiles.front());
+        else
+        Files.push_back("dummy.cpp"); // Fallback dummy file
+    }
 
+    // ============================================================================
+    // Pass Selection and Execution
+    // ============================================================================
 
-  return Tool.run(Factory.get());
+    // Create frontend action factory for the specified pass
+    auto Factory = makeFactoryForPass(PassName);
+    if (!Factory) {
+        errs() << "error: unknown pass '" << PassName << "'. Available passes:\n"
+            << "  - recurse\n"
+            << "  - cast\n";
+        return 1;
+    }
 
-
-  // ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
-  // return Tool.run(newFrontendActionFactory<NumaFrontendAction>().get());
-
-
+    // Execute the transformation tool with selected pass
+    ClangTool Tool(OptionsParser.getCompilations(), Files);
+    return Tool.run(Factory.get());
 }

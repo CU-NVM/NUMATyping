@@ -1,7 +1,5 @@
 CC=clang++
 HOME_DIR := $(shell echo $$HOME)
-LINK_DIRS=-L../Stack/bin -L../Queue/bin -L../BinarySearch/bin -L../LinkdedList/bin 
-
 LINK_FLAGS=-lnuma -std=c++20 -pthread 
 
 STATIC_LINK_FLAGS=../Node/bin/libnode.a ../Stack/bin/libstack.a ../Queue/bin/libqueue.a ../BinarySearch/bin/libbinarysearch.a ../LinkdedList/bin/liblinkedlist.a
@@ -10,7 +8,8 @@ UMF_INC_DIRS=
 
 
 EXE=./bin/DSExample
-OBJS=main.o TestSuite.o
+HIST_EXE=./bin/HistogramExample
+OBJS=main.o TestSuite.o Histogram.o
 
 UMF =
 FLAGS = -fno-omit-frame-pointer
@@ -43,6 +42,10 @@ main.o:
 
 TestSuite.o: TestSuite.cpp
 	$(CC) -c  -O3 -g -std=c++20  -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)  TestSuite.cpp 
+
+Histogram.o: Histogram.cpp
+	$(CC) -c  -O3 -g -std=c++20  -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)  Histogram.cpp
+
 
 clean:
 	rm *.o $(EXE)

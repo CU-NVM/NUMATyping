@@ -2,8 +2,6 @@
 #define RECURSIVENUMATYPER_HPP
 
 #include "transformer.h"
-
-// #include "RecursiveNumaTyper.h"
 #include <clang/AST/Decl.h>
 #include <clang/AST/Expr.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
@@ -17,24 +15,23 @@
 #include <sstream>
 #include <string>
 #include "llvm/Support/raw_ostream.h"
-
+#include <vector>
+#include <unordered_set>
 #include <set>
 #include <map>
 
-// namespace clang
-// {
-//     class ASTContext;
-//     class raw_ostream;
-//     class Rewriter;
-// }
 using namespace clang;
 class RecursiveNumaTyper : public Transformer
 {
     private:
-        std::vector<const clang::CXXNewExpr*> numaDeclTable;
-        std::vector<std::pair<const clang::CXXRecordDecl*, int64_t>> specializedClasses;
+        std::vector<std::pair<const clang::CXXRecordDecl*, llvm::APInt>> specializedClasses;
         clang::SourceLocation rewriteLocation;
         std::vector<clang::FileID> fileIDs;
+        std::vector<const clang::CXXNewExpr*> newNumaExprs;
+        std::unordered_set<std::string> seenNewNumaTypes;
+        std::vector<const clang::VarDecl*> numaVarDecls;
+        std::unordered_set<std::string> seenVarDeclTypes;
+
         
     public:
         
@@ -42,33 +39,30 @@ class RecursiveNumaTyper : public Transformer
 
         virtual void start() override;
         virtual void print(clang::raw_ostream &stream) override;
-        virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &result);
+        virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &result)override;
 
-        bool NumaDeclExists(clang::ASTContext *Context, QualType FirstTemplateArg, int64_t SecondTemplateArg);
-        void addAllSpecializations(clang::ASTContext *Context);
-        std::vector<std::pair<const clang::CXXRecordDecl*, int64_t>> getSpecializedClasses(){
+        bool NumaDeclExists(const clang::ASTContext &Context, QualType FirstTemplateArg, llvm::APInt SecondTemplateArg);
+        void addAllSpecializations(const clang::ASTContext &Context);
+        std::vector<std::pair<const clang::CXXRecordDecl*, llvm::APInt>> getSpecializedClasses(){
             return specializedClasses;
         }
-        void extractNumaDecls(clang::Stmt *stmt, ASTContext *Context);
-        bool NumaSpeclExists(const clang::CXXRecordDecl* FirstTemplateArg, int64_t SecondTemplateArg);
+        bool NumaSpeclExists(const clang::CXXRecordDecl* FirstTemplateArg, llvm::APInt SecondTemplateArg);
         void makeVirtual(const clang::CXXRecordDecl *classDecl);
 
-        void specializeClass(clang::ASTContext* Context, const clang::CXXRecordDecl* FirstTemplateArg, int64_t SecondTemplateArg);
-        void constructSpecialization(clang::ASTContext* Context,const clang::CXXRecordDecl* classDecl, int64_t nodeID);
+        void specializeClass(const clang::ASTContext& Context, const clang::CXXRecordDecl* FirstTemplateArg, llvm::APInt SecondTemplateArg);
+        void constructSpecialization(const clang::ASTContext& Context,const clang::CXXRecordDecl* classDecl, llvm::APInt nodeID);
 
-        void numaPublicMembers(clang::ASTContext* Context, clang::SourceLocation& rewriteLocation, std::vector<clang::FieldDecl*> publicFields,std::vector<clang::CXXMethodDecl*> publicMethods, int64_t nodeID);
-        void numaPrivateMembers(clang::ASTContext* Context, clang::SourceLocation& rewriteLocation,std::vector<clang::FieldDecl*> privateFields, std::vector<clang::CXXMethodDecl*> privateMethods, int64_t nodeID);
+        void numaPublicMembers(const clang::ASTContext& Context, clang::SourceLocation& rewriteLocation, std::vector<clang::FieldDecl*> publicFields,std::vector<clang::CXXMethodDecl*> publicMethods, llvm::APInt nodeID);
+        void numaPrivateMembers(const clang::ASTContext& Context, clang::SourceLocation& rewriteLocation,std::vector<clang::FieldDecl*> privateFields, std::vector<clang::CXXMethodDecl*> privateMethods, llvm::APInt nodeID);
 
-        void numaConstructors(clang::CXXConstructorDecl* Ctor, clang::SourceLocation& rewriteLocation, int64_t nodeID);
+        void numaConstructors(clang::CXXConstructorDecl* Ctor, clang::SourceLocation& rewriteLocation, llvm::APInt nodeID);
         std::string getNumaConstructorSignature(clang::CXXConstructorDecl* Ctor);
-       
-        void numaDestructors(clang::CXXDestructorDecl* Dtor, clang::SourceLocation& rewriteLocation, int64_t nodeID);
-        //TODO: Refactor numaDestructors according to numaConstructors
-        void numaMethods(clang::CXXMethodDecl* method, clang::SourceLocation& rewriteLocation, int64_t nodeID);
-        std::string getNumaMethodSignature(clang::CXXMethodDecl* method);
-      
-        
 
+        void numaDestructors(clang::CXXDestructorDecl* Dtor, clang::SourceLocation& rewriteLocation, llvm::APInt nodeID);
+        //TODO: Refactor numaDestructors according to numaConstructors
+        void numaMethods(const clang::ASTContext& Context, clang::CXXMethodDecl* method, clang::SourceLocation& rewriteLocation, llvm::APInt nodeID);
+        std::string getNumaMethodSignature(clang::CXXMethodDecl* method);
+        void printNumaCandidates(const clang::ASTContext& context);
         
 };
 

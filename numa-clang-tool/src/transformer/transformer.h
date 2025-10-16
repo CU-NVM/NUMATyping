@@ -6,7 +6,7 @@
 namespace clang
 {
     class ASTContext;
-    class raw_ostream;
+    // class raw_ostream;
     class Rewriter;
 }
 

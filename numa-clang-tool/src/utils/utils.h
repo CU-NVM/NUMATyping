@@ -35,72 +35,35 @@ namespace utils
     class NewExprInBinaryOperatorVisitor : public RecursiveASTVisitor<NewExprInBinaryOperatorVisitor>
     {
     public:
-        explicit NewExprInBinaryOperatorVisitor(clang::ASTContext *Context) : Context(Context) {}
+        explicit NewExprInBinaryOperatorVisitor(const clang::ASTContext *Context) {}
         bool VisitBinaryOperator(BinaryOperator *BO)
         {
-            // if (const Expr *LHS = BO->getLHS()) {
-            //     if (const CXXNewExpr *NewExpr = dyn_cast<CXXNewExpr>(LHS->IgnoreParenImpCasts())) {
-            //         llvm::outs() << "Found CXXNewExpr in BinaryOperator LHS\n";
-            //     }
-            // }
-           
             if (const Expr *RHS = BO->getRHS()) {
-                llvm::outs() << "KaylordFound Binary Operator: " << BO->getOpcodeStr() << "\n";
-                BO->getRHS()->dump();
             std::string original_type;
                 if(const CXXReinterpretCastExpr *ReinterpretCastExpr = dyn_cast<CXXReinterpretCastExpr>(RHS->IgnoreParenImpCasts())){
-
                     if(const CXXNewExpr *NewExpr = dyn_cast<CXXNewExpr>(ReinterpretCastExpr->getSubExpr()->IgnoreParenImpCasts())){
-                        llvm::outs() << "KOMAGAD found a new expr under a reinterpret cast\n";
-                        llvm::outs() << "The type is " << NewExpr->getType().getAsString() << "\n";
-                        llvm::outs() << "The allocated type is " << NewExpr->getAllocatedType().getAsString() << "\n";
                         if ((NewExpr->getType().getAsString().substr(0, 4).compare("numa") == 0)|| (original_type.substr(0,4).compare("numa")==0))
                         {
-                            llvm::outs() << "The RHS expression is" << RHS->getStmtClassName() << "\n";
                             const Expr *LHS = BO->getLHS();
                             QualType LHSType = LHS->getType();
-                            llvm::outs() << "The LHS type is " << LHSType.getAsString() << "\n";
                             CXXNewExprs.insert({NewExpr,LHSType});
                         }
                     }
-                    // llvm::outs() << "FromRIKFound CXXReinterpretCastExpr in BinaryOperator RHS\n";
-                    // llvm::outs() << "FromRIKThe RHS expression is" << RHS->getStmtClassName() << "\n";
-                    // llvm::outs() << "FromRIKThe RHS type is " << ReinterpretCastExpr->getType().getAsString() << "\n";
-                    // llvm::outs() << "FROMRIKThe RHS original type is " << ReinterpretCastExpr->getSubExpr()->getType().getAsString() << "\n";
-                    // original_type = ReinterpretCastExpr->getSubExpr()->getType().getAsString();
                 }
 
 
                 if (const CXXNewExpr *NewExpr = dyn_cast<CXXNewExpr>(RHS->IgnoreParenImpCasts())) {
 
-                    llvm::outs() << "KFound CXXNewExpr in BinaryOperator RHS\n";
-                    llvm::outs() << "KThe RHS expression is" << RHS->getStmtClassName() << "\n";
-                    llvm::outs() << "KThe RHS type is " << NewExpr->getType().getAsString() << "\n";
-                    llvm::outs() << "KThe RHS original type is " << NewExpr->getAllocatedType().getAsString() << "\n";
-                    QualType allocatedType = NewExpr->getAllocatedType();
-                    llvm::outs() << "KThe allocated type is " << allocatedType.getAsString() << "\n";
-                    allocatedType.dump();
-
-                    // CXallocatedType->getAs<CXXRecordDecl>()
-                    llvm::outs()<<"Koriginal type to be checked is either " << original_type << " or " << NewExpr->getType().getAsString() << "\n";
-                    //if newexprs type  is numa, then push to CXXNewExprs
                     if ((NewExpr->getType().getAsString().substr(0, 4).compare("numa") == 0)|| (original_type.substr(0,4).compare("numa")==0))
                     {
-                        llvm::outs() << "The RHS expression is" << RHS->getStmtClassName() << "\n";
                         const Expr *LHS = BO->getLHS();
                         QualType LHSType = LHS->getType();
-                        llvm::outs() << "The LHS type is " << LHSType.getAsString() << "\n";
                         CXXNewExprs.insert({NewExpr,LHSType});
                     }
 
                 }
             }
-            //get LHS
-
-            
-            return true; // Continue traversal
-            //BinaryOperators.push_back(BO);
-            //return true;
+            return true; 
         }
         
         std::map<const CXXNewExpr *, QualType> getBinaryOperators() { return CXXNewExprs; }
@@ -108,13 +71,13 @@ namespace utils
     private:
         std::map<const CXXNewExpr *, QualType> CXXNewExprs;
         // std::string original_type;
-        ASTContext *Context;
+        
     };
 
     
     class DeclStmtVisitor : public RecursiveASTVisitor<DeclStmtVisitor>{
     public:
-        explicit DeclStmtVisitor(clang::ASTContext *Context) : Context(Context) {}
+        explicit DeclStmtVisitor(const clang::ASTContext *Context) {}
         bool VisitDeclStmt(DeclStmt *DS) {
             DeclStmts.push_back(DS);
             return true;
@@ -123,7 +86,7 @@ namespace utils
         void clearDeclStmts() { DeclStmts.clear(); }
     private:
         std::vector<DeclStmt*> DeclStmts;
-        ASTContext *Context;
+        
     };
 
     bool fileExists(const std::string &file);
@@ -131,7 +94,7 @@ namespace utils
 
     class CompoundStmtVisitor : public RecursiveASTVisitor<CompoundStmtVisitor>{
         public:
-            explicit CompoundStmtVisitor(clang::ASTContext *Context) : Context(Context) {}
+            explicit CompoundStmtVisitor(const clang::ASTContext *Context){}
             bool VisitCompoundStmt(CompoundStmt *CD) {
                 CompoundStmts.push_back(CD);
                 return true;
@@ -140,20 +103,16 @@ namespace utils
             void clearCompoundStmts() { CompoundStmts.clear(); }
         private:
             std::vector<CompoundStmt*> CompoundStmts;
-            ASTContext *Context;
+            
     };
 
     class CXXNewExprVisitor : public RecursiveASTVisitor<CXXNewExprVisitor>{
     public:
-        explicit CXXNewExprVisitor(clang::ASTContext *Context) : Context(Context) {}
+        explicit CXXNewExprVisitor(const clang::ASTContext *Context)  {}
         bool VisitCXXNewExpr(CXXNewExpr *NE) {
             CXXNewExprs.push_back(NE);
             SourceLocation Loc = NE->getBeginLoc();
             CXXNewExprLocs.push_back(Loc);
-            // std::string FileName = SM.getFilename(Loc).str();
-            // unsigned Line = SM.getSpellingLineNumber(Loc);
-
-            // llvm::outs() << "'new' expression found at " << FileName << ":" << Line << "\n";
             return true;
         }
         std::vector<CXXNewExpr* > getCXXNewExprs() { return CXXNewExprs; }
@@ -162,12 +121,12 @@ namespace utils
     private:
         std::vector<CXXNewExpr*> CXXNewExprs;
         std::vector<SourceLocation> CXXNewExprLocs;
-        ASTContext *Context;
+        
     };
 
     class AssignmentOperatorCallVisitor :public RecursiveASTVisitor<AssignmentOperatorCallVisitor>{
     public:
-        explicit AssignmentOperatorCallVisitor(clang::ASTContext *Context) : Context(Context) {}
+        explicit AssignmentOperatorCallVisitor(const clang::ASTContext *Context){}
         bool VisitCXXOperatorCallExpr(CXXOperatorCallExpr *OCE){
             // if(OCE->isLValue()){
             AssignmentOperatorCallExprs.push_back(OCE);
@@ -183,12 +142,12 @@ namespace utils
     private:
         std::vector<CXXOperatorCallExpr*> AssignmentOperatorCallExprs;
         std::vector<SourceLocation> AssignmentOperatorCallExprLocs;
-        ASTContext *Context;
+        
     };
 
     class MemberExprVisitor : public RecursiveASTVisitor<MemberExprVisitor>{
     public:
-        explicit MemberExprVisitor(clang::ASTContext *Context) : Context(Context) {}
+        explicit MemberExprVisitor(const clang::ASTContext *Context){}
         bool VisitMemberExpr(MemberExpr *ME) {
             MemberExprs.push_back(ME);
             return true;
@@ -197,23 +156,15 @@ namespace utils
         void clearMemberExprs() { MemberExprs.clear(); }
     private:
         std::vector<MemberExpr*> MemberExprs;
-        ASTContext *Context;
+        
     };
 
 
     class VarDeclVisitor : public RecursiveASTVisitor<VarDeclVisitor>
     {
     public:
-        explicit VarDeclVisitor(clang::ASTContext *Context) : Context(Context) {}
-        // bool VarDeclExpr(VarDecl *VD) {
-        //     llvm::outs() << "VarDecl found from inside the visitor\n";
-        //     llvm::outs() << "VarDecl Name: " << VD->getNameAsString() << "\n";
-        //     VarDecls.push_back(VD);
-        //     return true;
-        // }
+        explicit VarDeclVisitor(const clang::ASTContext *Context){}
         bool VisitVarDecl(VarDecl *VD) {
-            llvm::outs() << "VarDecl found from inside the visitor\n";
-            llvm::outs() << "VarDecl Name: " << VD->getNameAsString() << "\n";
             VarDecls.push_back(VD);
             return true;
         }
@@ -221,7 +172,7 @@ namespace utils
         void clearVarDecls() { VarDecls.clear(); }
     private:
         std::vector<VarDecl*> VarDecls;
-        ASTContext *Context;
+        
     };
 
 

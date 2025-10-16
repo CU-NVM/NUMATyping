@@ -2,99 +2,144 @@
 #ifndef NUMATHREADS_HPP
 #define NUMATHREADS_HPP
 
-#include <thread>
+#include <cassert>
+#include <cerrno>
+#include <cstdint>
 #include <iostream>
-#include <vector>
-#include <memory>
-#include <numa.h>
-#include <thread>
 #include <map>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <thread>
+#include <vector>
 
+#include <numa.h>
+#include <numaif.h>
+#include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
+
+// Optional: cap if you really want a fixed upper bound; we now compute ncpus at runtime.
+#ifndef MAX_CPUS
 #define MAX_CPUS 80
+#endif
+
+// #define NUMA_THREADS_DEBUG 1
 
 template <int NodeID>
 class thread_numa : public std::thread {
 public:
     using thread_type = std::thread;
 
-    // Constructor that takes a function and its arguments
     template <typename Func, typename... Args>
-    thread_numa(Func&& func, Args&&... args): std::thread(std::forward<Func>(func), std::forward<Args>(args)...) {
-        // Pin the current thread to the specified NUMA node
-        
-
-        // Create a thread with the provided function and arguments
-       // thread_ = std::thread(std::forward<Func>(func), std::forward<Args>(args)...);
+    thread_numa(Func&& func, Args&&... args)
+        : std::thread(std::forward<Func>(func), std::forward<Args>(args)...) {
+        // Pin the new thread to the specified NUMA node
         pin_thread_to_node(this, NodeID);
     }
 
-    // Destructor: join the thread if it is joinable
     ~thread_numa() = default;
 
-    // Delete copy constructor and copy assignment operator
-    thread_numa(const thread_numa&) = delete;
+    thread_numa(const thread_numa&)            = delete;
     thread_numa& operator=(const thread_numa&) = delete;
 
-    // Move constructor and assignment operator
-    thread_numa(thread_numa&& other) noexcept :  std::thread(other) {}
+    thread_numa(thread_numa&& other) noexcept : std::thread(std::move(other)) {}
     thread_numa& operator=(thread_numa&& other) noexcept {
-        if (this != &other) {
-            std::thread::operator=(std::move(other));  // Call base class move assignment
-        }
+        if (this != &other) std::thread::operator=(std::move(other));
         return *this;
     }
 
-    // void join() {
-    //     if (this->joinable()) {
-    //         this->join();
-    //     }
-    // }
-
 private:
-    //thread_type thread_;
-    static inline std::map<int, cpu_set_t*> node_to_cpumask;
+    // Store BOTH the cpu_set_t* and its size (bytes) so pthread_setaffinity_np gets the exact size.
+    static inline std::map<int, std::pair<cpu_set_t*, size_t>> node_to_cpumask;
 
-    static decltype(node_to_cpumask)::iterator convert_bitmask_to_cpuset(int Node_num){
+    static inline decltype(node_to_cpumask)::iterator convert_bitmask_to_cpuset(int node) {
         if (numa_available() == -1) {
-            throw std::runtime_error( "NUMA is not available on this system.");
+            throw std::runtime_error("NUMA is not available on this system.");
         }
-        struct bitmask* mask= numa_allocate_cpumask();
-        int result = numa_node_to_cpus(Node_num, mask);
-        if (result != 0 ){
-            throw std::runtime_error("Getting bitmask failed");
+
+        // Get the NUMA node's CPU bitmask
+        bitmask* bm = numa_allocate_cpumask();
+        if (!bm) throw std::runtime_error("numa_allocate_cpumask failed");
+        if (numa_node_to_cpus(node, bm) != 0) {
+            numa_free_cpumask(bm);
+            throw std::system_error(errno, std::generic_category(), "numa_node_to_cpus");
         }
-        cpu_set_t* cpuset = CPU_ALLOC(MAX_CPUS);
-        CPU_ZERO(cpuset);
-        for(int i =0 ; i < MAX_CPUS; ++i){
-            if(numa_bitmask_isbitset(mask,(unsigned)i)){
-                CPU_SET(i, cpuset);
-             // std::cout<<Node_num<<"cpu"<<i<<std::endl;
+
+        // Use actual CPU count; fall back to MAX_CPUS if sysconf fails.
+        long nconf = sysconf(_SC_NPROCESSORS_CONF);
+        int  ncpus = (nconf > 0) ? static_cast<int>(nconf) : MAX_CPUS;
+
+        size_t sz = CPU_ALLOC_SIZE(ncpus);
+        cpu_set_t* set = CPU_ALLOC(ncpus);
+        if (!set) {
+            numa_free_cpumask(bm);
+            throw std::runtime_error("CPU_ALLOC failed");
+        }
+        CPU_ZERO_S(sz, set);
+
+        // Copy bits from libnuma bitmask cpu_set_t
+        for (int cpu = 0; cpu < static_cast<int>(bm->size); ++cpu) {
+            if (numa_bitmask_isbitset(bm, cpu) && cpu < ncpus) {
+                CPU_SET_S(cpu, sz, set);
             }
         }
-        auto it = node_to_cpumask.insert({Node_num, cpuset});
-        assert(it.second);
-        return it.first;
+        numa_free_cpumask(bm);
+
+        auto [it, inserted] = node_to_cpumask.insert({node, {set, sz}});
+        if (!inserted) {
+            // Already had one; free the new allocation and return existing
+            CPU_FREE(set);
+        }
+        return node_to_cpumask.find(node);
     }
-    
-    void pin_thread_to_node(std::thread* tid, int Node_num) {
+
+    static inline void pin_thread_to_node(std::thread* t, int node) {
         if (numa_available() == -1) {
-            std::cerr << "NUMA is not available on this system." << std::endl;
+            std::cerr << "NUMA is not available on this system.\n";
             return;
         }
 
-        auto it = node_to_cpumask.find(Node_num);
-        if(it == node_to_cpumask.end()){
-           it = convert_bitmask_to_cpuset(Node_num);
+        // Build or get cached mask for this node
+        auto it = node_to_cpumask.find(node);
+        if (it == node_to_cpumask.end()) {
+            it = convert_bitmask_to_cpuset(node);
         }
-        pthread_t pid= (pthread_t) tid->native_handle();
-        // printf("it->second %p\n", it->second);
-        if(pthread_setaffinity_np(pid, CPU_ALLOC_SIZE(MAX_CPUS), it->second)){
-            throw std::runtime_error("could not bind thread");
+        cpu_set_t* mask = it->second.first;
+        size_t     sz   = it->second.second;
+
+        // Intersect with allowed CPUs to avoid EPERM under cgroups/cpuset
+        cpu_set_t* allowed = static_cast<cpu_set_t*>(malloc(sz));
+        if (allowed && sched_getaffinity(0, sz, allowed) == 0) {
+            for (int cpu = 0; cpu < static_cast<int>(8 * sz); ++cpu) {
+                if (!CPU_ISSET_S(cpu, sz, allowed)) {
+                    CPU_CLR_S(cpu, sz, mask);
+                }
+            }
         }
-        //numa_run_on_node(Node_num);  // Pin thread to NUMA node
+        free(allowed);
+
+        // Ensure the mask isn't empty
+        bool any = false;
+        for (int cpu = 0; cpu < static_cast<int>(8 * sz); ++cpu) {
+            if (CPU_ISSET_S(cpu, sz, mask)) { any = true; break; }
+        }
+        if (!any) {
+            throw std::runtime_error("Affinity mask is empty for node " + std::to_string(node));
+        }
+
+        // debug_print_mask("binding mask", mask, sz);
+
+        pthread_t pid = t->native_handle();
+\
+        int rc = pthread_setaffinity_np(pid, sz, mask);
+        if (rc != 0) {
+            throw std::system_error(rc, std::generic_category(),
+                                    "pthread_setaffinity_np (node " + std::to_string(node) + ")");
+        }
+
     }
 };
 
-
-#endif
-
+#endif // NUMATHREADS_HPP
