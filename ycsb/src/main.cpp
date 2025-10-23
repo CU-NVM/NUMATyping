@@ -1,12 +1,23 @@
-#include "../include/ycsb_benchmark.hpp"
+#include "ycsb_benchmark.hpp"
+#include "zipfian_generator.h"
 #include <iostream>
 #include <string>
 #include <vector>
 #include <getopt.h>
-#include "../../numaLib/numathreads.hpp"
-#include <numa.h> 
+#include "numathreads.hpp"
+
 
 using namespace std;
+using namespace ycsbc;
+
+#ifdef NUMA_MACHINE
+	#define NODE_ZERO 0
+	#define NODE_ONE 1
+#else
+	#define NODE_ZERO 0
+	#define NODE_ONE 1
+#endif
+
 
 int num_threads = 2;
 int bucket_count = 1024;
@@ -17,9 +28,23 @@ double theta = 0.99;
 string locality_key = "80-20";
 string th_config = "regular";
 string DS_config = "regular";
+int duration=20;
+int interval=10;
 
+
+vector<thread_numa<NODE_ZERO>*> numa_thread0;
+vector<thread_numa<NODE_ONE>*> numa_thread1;
+vector<thread*> regular_thread0;
+vector<thread*> regular_thread1;
+thread_numa<NODE_ZERO>* init_thread0;
+thread_numa<NODE_ONE>* init_thread1;
+std::thread* init_thread_regular0;
+std::thread* init_thread_regular1;
+
+vector<ZipfianGenerator*> generators;
 
 void compile_options(int argc, char *argv[]) {
+    //todo: duration interval
     static struct option long_options[] = {
         {"threads",    required_argument, nullptr, 't'},
         {"buckets",    required_argument, nullptr, 'b'},
@@ -69,6 +94,133 @@ void compile_options(int argc, char *argv[]) {
     }
 }
 
+WorkloadConfig selectWorkload(const string &w) {
+    WorkloadConfig workloadA = {50, 50, 0, 0, 0};
+    WorkloadConfig workloadB = {95, 5, 0, 0, 0};
+    WorkloadConfig workloadC = {100, 0, 0, 0, 0};
+    WorkloadConfig workloadD = {95, 0, 5, 0, 0};
+    WorkloadConfig workloadE = {0, 0, 5, 95, 0};
+    WorkloadConfig workloadF = {50, 0, 0, 0, 50};
+    if (w == "A") return workloadA;
+    if (w == "B") return workloadB;
+    if (w == "C") return workloadC;
+    if (w == "D") return workloadD;
+    if (w == "E") return workloadE;
+    if (w == "F") return workloadF;
+    throw runtime_error("Unknown workload " + w);
+}
+
+
+int selectLocality(const string &l) {
+    if (l == "80-20") return 80;
+    if (l == "50-50") return 50;
+    if (l == "20-80") return 20;
+    throw runtime_error("Unknown locality split. Use 80-20, 50-50, or 20-80." + l);
+}
+
+void run_ycsb_benchmark(
+    const string& workload_key,
+    int total_ops,
+    int num_keys,
+    double theta,
+    int buckets,
+    const string& locality_key,
+    int num_threads,
+    const string& th_config,
+    const string& DS_config
+) 
+{
+    
+    if (num_threads <= 0) {
+        cerr << "Number of threads must be greater than 0.\n";
+        return;
+    }
+    
+    for (int i = 0; i < num_threads; ++i) {
+        generators.push_back(new ZipfianGenerator(0, num_keys - 1, theta));
+    }
+    WorkloadConfig cfg = selectWorkload(workload_key);
+    int local_pct = selectLocality(locality_key);
+    global_init(num_threads, duration, interval);
+
+//Initialization
+	#ifdef PIN_INIT
+    if(th_config == "numa"){
+            init_thread0 = new thread_numa<NODE_ZERO>(numa_hash_table_init, NODE_ZERO , DS_config, buckets);
+            init_thread1 = new thread_numa<NODE_ONE>(numa_hash_table_init,  NODE_ONE , DS_config, buckets);
+    }else{
+        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets);
+        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets);
+    }
+	#endif
+
+    int threads_per_node = num_threads / 2;
+    if (th_config == "numa") {
+        numa_thread0.resize(threads_per_node);
+        numa_thread1.resize(threads_per_node);
+    } else {
+        regular_thread0.resize(threads_per_node);
+        regular_thread1.resize(threads_per_node);
+    }
+
+   
+    int ops_per_thread = total_ops / num_threads;
+    auto start = chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < threads_per_node; ++i) {
+        int thread_id = i;
+        int numa_node = 0;
+        if (th_config == "numa") {
+            numa_thread0[i] = new thread_numa<NODE_ZERO>(
+               ycsb_test,
+                thread_id, threads_per_node, numa_node, duration, &cfg, 
+                generators[thread_id], num_keys, local_pct,interval
+            );
+        } else {
+            regular_thread0[i] = new thread(
+               ycsb_test,
+                thread_id, threads_per_node, numa_node, duration, &cfg, 
+                generators[thread_id], num_keys, local_pct,interval
+            );
+        }
+    }
+
+    for (int i = 0; i < threads_per_node; ++i) {
+        int thread_id = i + threads_per_node;
+        int numa_node = 1;
+        if (th_config == "numa") {
+            numa_thread1[i] = new thread_numa<NODE_ONE>(
+               ycsb_test,
+                thread_id, threads_per_node, numa_node, duration, &cfg, 
+                generators[thread_id], num_keys, local_pct,interval
+            );
+        } else {
+            regular_thread1[i] = new thread(
+                ycsb_test,
+                thread_id, threads_per_node, numa_node, duration, &cfg, 
+                generators[thread_id], num_keys, local_pct,interval
+            );
+        }
+    }
+
+    if (th_config == "numa") {
+        for (auto th : numa_thread0) th->join();
+        for (auto th : numa_thread1) th->join();
+    } else {
+        for (auto th : regular_thread0) th->join();
+        for (auto th : regular_thread1) th->join();
+    }
+
+    if (th_config == "numa") {
+        for (auto th : numa_thread0) delete th;
+        for (auto th : numa_thread1) delete th;
+    } else {
+        for (auto th : regular_thread0) delete th;
+        for (auto th : regular_thread1) delete th;
+    }
+
+}
+
 int main(int argc, char** argv) {
 
     compile_options(argc, argv);
@@ -92,6 +244,18 @@ int main(int argc, char** argv) {
         th_config,
         DS_config
     );
+    cout << "YCSB Benchmark Report:\n";
+    cout << "----------------------\n";
+    cout << "Workload: " << workload_key << ", Threads: " << num_threads 
+        << ", Locality: " << locality_key << endl;
+    cout << "Thread Config: " << th_config << ", DS Config: " << DS_config << endl;
+
+
+    for (auto gen : generators) {
+        delete gen;
+    }
+
+
 
     return 0;
 }

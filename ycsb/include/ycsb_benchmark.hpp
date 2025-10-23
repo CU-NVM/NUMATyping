@@ -2,6 +2,12 @@
 #define YCSB_BENCHMARK_HPP
 
 #include <string>
+#include "zipfian_generator.h"
+#include <stdexcept>
+#include <jemalloc/jemalloc.h>
+#include <umf/pools/pool_jemalloc.h>
+using namespace ycsbc;
+using namespace std;
 
 /**
  *
@@ -16,6 +22,29 @@
  * @param DS_config (regular, numa)
  */
 
+
+
+struct WorkloadConfig {
+    int read_pct;
+    int update_pct;
+    int insert_pct;
+    int scan_pct;
+    int rmw_pct;
+};
+
+WorkloadConfig selectWorkload(const string &w);
+
+void global_init(int num_threads, int duration, int interval);
+void numa_hash_table_init(int numa_node, std::string DS_config, int buckets);
+void ycsb_test(  int thread_id,
+    int num_total_threads,
+    int numa_node,
+    int duration,
+    const WorkloadConfig* cfg,
+    ZipfianGenerator* gen,
+    int num_keys,
+    int local_pct,
+    int interval);
 void run_ycsb_benchmark(
     const std::string& workload_key,
     int total_ops,
