@@ -14,3 +14,4 @@
 - split files into main and ycsb cpps, ycsb will have worker_thread function
 8. change strings to c strings
 9. also make mt generator thread local (maybe dont need to do this)
+10. add duration 

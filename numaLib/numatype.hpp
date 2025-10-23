@@ -15,7 +15,8 @@
 #include <cassert>
 #include <umf/mempolicy.h>
 #include <umf/memspace.h>
-#include "utils_examples.h"
+#include "../unified-memory-framework/examples/common/utils_examples.h"
+// #include "utils_examples.h" replaced with line above for compilation
 #include "umf_numa_allocator.hpp"
 
 

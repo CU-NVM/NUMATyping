@@ -12,6 +12,8 @@
  * @param buckets
  * @param locality_key (80-20, 50-50, 20-80)
  * @param num_threads 
+ * @param th_config (regular, numa)
+ * @param DS_config (regular, numa)
  */
 
 void run_ycsb_benchmark(
@@ -21,7 +23,9 @@ void run_ycsb_benchmark(
     double theta,
     int buckets,
     const std::string& locality_key,
-    int num_threads
+    int num_threads,
+    const std::string& th_config,
+    const std::string& DS_config
 );
 
 #endif

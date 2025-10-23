@@ -1,31 +1,33 @@
 #include "HashNode.hpp"
-#include "ttas.hpp"
+#include "numatype.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
 
-using namespace std;
 
-class HashTable {
+using namespace std;
+class HashTable{
     HashNode** table;
     int bucket_count;
-    std::vector<Ttas> bucket_locks; // lock for each bucket
 
-    int hash(const char* key);
+   
 public:
     HashTable(int buckets);
     ~HashTable();
-
+    int hash(const char* key);
     void insert(const char* key);
     void remove(const char* key);
     int getCount(const char* key);
     bool updateCount(const char* key, int count);
+    bool exists(const char* key);
     void printAll();
+    std::vector<char*> getAllKeys();
 };
 
-HashTable::HashTable(int buckets) : bucket_count(buckets), bucket_locks(buckets) { // had to init locks here or breaks everything
-    // keeping this here to change original data structure as little as possible
-    table = new HashNode*[buckets];
+
+HashTable::HashTable(int buckets) {
+    bucket_count = buckets;
+    table = new HashNode*[bucket_count];
     for(int i = 0; i < bucket_count; i++) {
         table[i] = nullptr;
     }
@@ -54,8 +56,6 @@ int HashTable::hash(const char* key) {
 
 void HashTable::insert(const char* word){
     int idx = hash(word);
-    bucket_locks[idx].lock(); // lock
-
     HashNode* curr = table[idx];
     while(curr){
         if(strcmp(curr->key, word)==0){
@@ -67,13 +67,10 @@ void HashTable::insert(const char* word){
     HashNode* newNode = new HashNode(word);
     newNode->next = table[idx];
     table[idx] = newNode;
-    bucket_locks[idx].unlock(); // unlock
 }
 
 void HashTable::remove(const char* word){
     int idx = hash(word);
-    bucket_locks[idx].lock(); // lock
-
     HashNode* curr = table[idx];
     HashNode* prev = nullptr;
     while(curr){
@@ -89,13 +86,10 @@ void HashTable::remove(const char* word){
         prev = curr;
         curr = curr->next;
     }
-    bucket_locks[idx].unlock(); // unlock
 }
 
 int HashTable::getCount(const char* word){
     int idx = hash(word);
-    bucket_locks[idx].lock(); // lock
-
     HashNode* curr = table[idx];
     while(curr){
         if(strcmp(curr->key, word)==0){
@@ -103,14 +97,11 @@ int HashTable::getCount(const char* word){
         }
         curr = curr->next;
     }
-    bucket_locks[idx].unlock(); // unlock
     return 0;
 }
 
 bool HashTable::updateCount(const char* word, int count){
     int idx = hash(word);
-    bucket_locks[idx].lock(); // lock
-    
     HashNode* curr = table[idx];
     while(curr){
         if(strcmp(curr->key, word)==0){
@@ -119,19 +110,40 @@ bool HashTable::updateCount(const char* word, int count){
         }
         curr = curr->next;
     }
-    bucket_locks[idx].unlock(); // unlock
+    return false;
+}
+
+bool HashTable::exists(const char* word){
+    int idx = hash(word);
+    HashNode* curr = table[idx];
+    while(curr){
+        if(strcmp(curr->key, word)==0){
+            return true;
+        }
+        curr = curr->next;
+    }
     return false;
 }
 
 
 void HashTable::printAll(){
     for(int i = 0; i < bucket_count; i++) {
-        bucket_locks[i].lock(); // lock
         HashNode* curr = table[i];
         while(curr){
             std::cout << curr->key << ": " << curr->count << std::endl;
             curr = curr->next;
         }
-        bucket_locks[i].unlock(); // unlock
     }
+}
+
+std::vector<char*> HashTable::getAllKeys(){
+    std::vector<char*> keys;
+    for(int i = 0; i < bucket_count; i++) {
+        HashNode* curr = table[i];
+        while(curr){
+            keys.push_back(curr->key);
+            curr = curr->next;
+        }
+    }
+    return keys;
 }
