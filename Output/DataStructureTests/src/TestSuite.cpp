@@ -112,8 +112,8 @@ void global_init(int num_threads, int duration, int interval){
 void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int node, int crossover){
 	BSTs0.resize(num_DS);
 	BSTs1.resize(num_DS);
-	BST_lk0.resize(num_DS);
-	BST_lk1.resize(num_DS);
+	BST_lk0.resize(BSTs0.size());
+	BST_lk1.resize(BSTs1.size());
 
 	std::mt19937 gen(123);
 	std::uniform_int_distribution<> xDist(1, 100);
@@ -159,10 +159,10 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 	
 		BSTs0.resize(num_DS);
 		BSTs1.resize(num_DS);
-		BST_lk0.resize(num_DS);
-		BST_lk1.resize(num_DS);
-		BST_reader_lk0.resize(num_DS);
-		BST_reader_lk1.resize(num_DS);
+		BST_lk0.resize(BSTs0.size());
+		BST_lk1.resize(BSTs1.size());
+		BST_reader_lk0.resize(BSTs0.size());
+		BST_reader_lk1.resize(BSTs1.size());
 	}
 	pthread_barrier_wait(&init_bar);
 	std::mt19937 gen(123);

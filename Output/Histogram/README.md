@@ -7,7 +7,7 @@
 ```
     make clean
     make UMF=1
-    ./bin/histogram --th_config=regular --DS_config=regular -D 10 -f 1 -t 20 -i 10 --book_title=paper
+    ./bin/histogram --th_config=regular --DS_config=regular  -f 1 -t 20 --book_title=litrature
 ```
 
 ## How to compile and test the hashtable data structure

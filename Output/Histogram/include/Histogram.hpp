@@ -20,8 +20,9 @@ void global_init(int num_threads, int duration, int interval);
 
 void numa_histogram_init(int num_threads, std::string DS_config, int bucket_count, int node);
 void numa_histogram_single_init(int num_threads, std::string DS_config, int bucket_count);
-void histogram_test(int tid, int duration, int node, int num_threads, std::string filename);
+void histogram_test(int tid, int duration, std::string DS_config, int node, int num_threads, std::string filename, std::string merge_strategy, int bucket_count);
 
-
+void global_cleanup(int num_threads, int duration, int interval);
+void print_wordcounts();
 
 #endif 

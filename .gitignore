@@ -7,7 +7,9 @@ unified-memory-framework/build/*
 *.txt
 *.out
 Histogram/bin/*
-
+enwiki-latest-pages-articles.xml.bz2
+book/
+Output/*
 
 
 

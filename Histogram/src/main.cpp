@@ -44,6 +44,8 @@ bool verbose = false;
 int bucket_count = 10;
 string book_title = "";
 
+std::string merge_strat = "ALL";
+
 
 std::vector <thread_numa<NODE_ZERO>*> numa_thread0;
 std::vector <thread_numa<NODE_ONE>*> numa_thread1;
@@ -66,12 +68,12 @@ void compute_histogram(){
 	//Initialization
 	#ifdef PIN_INIT
 		if (numa_num_configured_nodes() == 1 || (DS_config == "regular" && thread_config == "regular")) {
-			init_thread_regular0 = new thread(numa_histogram_init, num_threads, "regular", bucket_count, 0);
-			init_thread_regular1 = new thread(numa_histogram_init, num_threads, "regular", bucket_count, 1);
+			init_thread_regular0 = new thread(numa_histogram_init, num_threads/2, "regular", bucket_count, 0);
+			init_thread_regular1 = new thread(numa_histogram_init, num_threads/2, "regular", bucket_count, 1);
 		}
 		else{
-			init_thread0 = new thread_numa<NODE_ZERO>(numa_histogram_init, num_threads, DS_config,  bucket_count, 0);
-			init_thread1 = new thread_numa<NODE_ONE>(numa_histogram_init, num_threads, DS_config,  bucket_count, 1);
+			init_thread0 = new thread_numa<NODE_ZERO>(numa_histogram_init, num_threads/2, DS_config,  bucket_count, 0);
+			init_thread1 = new thread_numa<NODE_ONE>(numa_histogram_init, num_threads/2, DS_config,  bucket_count, 1);
 		}
 	#else
 		std::cout<< "single threaded initialization running" <<std::endl;
@@ -84,13 +86,13 @@ void compute_histogram(){
 		int tid = i;
         string filename = "../book/per_thread/" + book_title + "_" + to_string(tid) + ".txt"; 
 		if(thread_config == "numa"){
-			numa_thread0[i] = new thread_numa<NODE_ZERO>(histogram_test, tid, duration, node, num_threads/2, filename);
+			numa_thread0[i] = new thread_numa<NODE_ZERO>(histogram_test, tid, duration, DS_config, node, num_threads/2, filename, merge_strat, bucket_count);
 		}
 		else if(thread_config == "regular"){
-			regular_thread0[i] = new thread(histogram_test, tid, duration, node, num_threads/2, filename);
+			regular_thread0[i] = new thread(histogram_test, tid, duration, DS_config, node, num_threads/2, filename, merge_strat, bucket_count);
 		}
 		else{
-			numa_thread0[i] = new thread_numa<NODE_ZERO>(histogram_test, tid, duration, 1, num_threads/2, filename);
+			numa_thread0[i] = new thread_numa<NODE_ZERO>(histogram_test, tid, duration, DS_config, 1, num_threads/2, filename, merge_strat, bucket_count);
 		}
 	}
 
@@ -99,13 +101,13 @@ void compute_histogram(){
 		int tid = i + num_threads/2;
 		string filename = "../book/per_thread/" + book_title + "_" + to_string(tid) + ".txt"; 
 		if(thread_config == "numa"){
-			numa_thread1[i] = new thread_numa<NODE_ONE>(histogram_test, tid, duration, node, num_threads/2, filename);
+			numa_thread1[i] = new thread_numa<NODE_ONE>(histogram_test, tid, duration, DS_config, node, num_threads/2, filename, merge_strat, bucket_count);
 		}
 		else if(thread_config == "regular"){
-			regular_thread1[i] = new thread(histogram_test, tid, duration, node, num_threads/2, filename);
+			regular_thread1[i] = new thread(histogram_test, tid, duration, DS_config, node, num_threads/2, filename, merge_strat, bucket_count);
 		}
 		else{
-			numa_thread1[i] = new thread_numa<NODE_ONE>(histogram_test, tid, duration, 0, num_threads/2, filename);
+			numa_thread1[i] = new thread_numa<NODE_ONE>(histogram_test, tid, duration, DS_config, 0, num_threads/2, filename, merge_strat, bucket_count);
 		}
 	}
 
@@ -154,7 +156,6 @@ void compute_histogram(){
 			numa_thread1[i]->join();
 		}
 	}
-
 }
 
 void compile_options(int argc, char *argv[]){
@@ -167,6 +168,7 @@ static struct option long_options[] = {
 		{"bucket_count", required_argument, nullptr, 'b'},      // -k
 		{"interval", required_argument, nullptr, 'i'},      // -i
 		{"book_title", required_argument, nullptr, 'a'},      // -a
+		{"merge_strategy", required_argument, nullptr, 'm'}, // -m
 		{"verbose", no_argument, nullptr, 'v'},        // --verbose
 		{"help", no_argument, nullptr, 'h'},           // --help
 		{nullptr, 0, nullptr, 0}                            // End of array
@@ -204,6 +206,11 @@ static struct option long_options[] = {
 			case 'a':
 				if(optarg){
 					book_title = optarg;
+				}
+				break;
+			case 'm': // -m option for merge strategy
+				if(optarg){
+					merge_strat = optarg;
 				}
 				break;
 			case 'v':  // --verbose flag
@@ -279,6 +286,23 @@ bool process_file(string book_title, int num_threads){
 	return true;
 }
 
+void clean_files(){
+	std::string home = std::getenv("HOME"); 
+    const std::filesystem::path dir = home + "/NUMATyping/book/per_thread/";
+
+    try {
+        if (std::filesystem::exists(dir) && std::filesystem::is_directory(dir)) {
+            std::filesystem::remove_all(dir); // removes everything in it (including the directory)
+            std::filesystem::create_directory(dir); // recreate the empty directory if you want to keep it
+            // std::cout << "Directory contents deleted successfully.\n";
+        } else {
+            	std::cerr << "Directory does not exist or is not valid.\n";
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error: " << e.what() << '\n';
+    }
+
+}
 
 void print_stat(bool verbose, bool print_header){
 	auto latmap = get_latency_map_copy();
@@ -368,5 +392,11 @@ int main(int argc, char *argv[])
 	bool print_header = false;
 	print_stat(verbose, print_header);
 	//std::cout << "Histogram computation completed." << std::endl;
+	numa_thread0.clear();
+	numa_thread1.clear();
+	regular_thread0.clear();
+	regular_thread1.clear();	
+	global_cleanup(num_threads, duration, interval);
+	clean_files();
 	return 0;
 }

@@ -16,12 +16,13 @@ public:
     ~HashTable();
     int hash(const char* key);
     void insert(const char* key);
+    void insert(const char* key, int count);
     void remove(const char* key);
     int getCount(const char* key);
     bool updateCount(const char* key, int count);
     bool exists(const char* key);
     void printAll();
-    std::vector<char*> getAllKeys();
+    std::vector<const char*> getAllKeys();
 };
 
 
@@ -65,6 +66,22 @@ void HashTable::insert(const char* word){
         curr = curr->next;
     }
     HashNode* newNode = new HashNode(word);
+    newNode->next = table[idx];
+    table[idx] = newNode;
+}
+
+void HashTable::insert(const char* word, int count){
+    int idx = hash(word);
+    HashNode* curr = table[idx];
+    while(curr){
+        if(strcmp(curr->key, word)==0){
+            curr->count += count;
+            return;
+        }
+        curr = curr->next;
+    }
+    HashNode* newNode = new HashNode(word);
+    newNode->count = count;
     newNode->next = table[idx];
     table[idx] = newNode;
 }
@@ -136,8 +153,8 @@ void HashTable::printAll(){
     }
 }
 
-std::vector<char*> HashTable::getAllKeys(){
-    std::vector<char*> keys;
+std::vector<const char*> HashTable::getAllKeys(){
+    std::vector<const char*> keys;
     for(int i = 0; i < bucket_count; i++) {
         HashNode* curr = table[i];
         while(curr){

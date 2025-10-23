@@ -68,6 +68,8 @@ numa<char*,0> key;
 numa<int,0> count;
 numa<HashNode*,0> next;
 numa (const char * word){
+    this->count = 1;
+    this->next = nullptr;
     this->key = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,0>[strlen(word) + 1]));
     strcpy(this->key, word);
 }
@@ -133,6 +135,8 @@ numa<char*,1> key;
 numa<int,1> count;
 numa<HashNode*,1> next;
 numa (const char * word){
+    this->count = 1;
+    this->next = nullptr;
     this->key = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,1>[strlen(word) + 1]));
     strcpy(this->key, word);
 }
@@ -143,7 +147,9 @@ virtual ~numa()
 private:
 };
 
-HashNode::HashNode(const char* word) : count(1), next(nullptr) {
+HashNode::HashNode(const char* word){
+        count = 1;
+        next = nullptr;
         key = new char[strlen(word) + 1];
         strcpy(key, word);
     }

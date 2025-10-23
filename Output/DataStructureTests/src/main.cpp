@@ -27,7 +27,7 @@ using namespace std;
 	#define NODE_ONE 1
 #else
 	#define NODE_ZERO 0
-	#define NODE_ONE 0
+	#define NODE_ONE 1
 #endif
 
 std::string thread_config;
@@ -249,7 +249,6 @@ int main(int argc, char *argv[])
         }
     }
 
-	print_function(0, 0 ,0, 0);
     
 	numa_thread0.resize(num_threads);
 	numa_thread1.resize(num_threads);
@@ -266,34 +265,29 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	else if(DS_name == "bst"){
-		for(int i=0; i < run_freq; i++){
-			std::cout<<" About to run BST test "<< i+1 << " out of " << run_freq << " times"<<std::endl;
-			main_BST_test(duration, num_DS, num_threads, crossover, keyspace);
-		}
-		int64_t sum0 = 0;
-		int64_t sum1 = 0;
-		int64_t total_sum = 0;
-		//get the average of the numbers in the array
-		for(int i = 0; i < num_ops0.size(); i++){
-			sum0 += num_ops0[i];	
-		}
-		for(int i = 0; i < num_ops1.size(); i++){
-			sum1 += num_ops1[i];
-		}
-		for(int i = 0; i < total_ops.size(); i++){
-			total_sum += total_ops[i];
-		}
-		int newDuration = interval;
-		for(int i = 0; i< globalOps0.size(); i++){
-			print_function(newDuration, globalOps0[i], globalOps1[i], globalOps0[i] + globalOps1[i]);
-			newDuration += interval;
-		}
+
+	for(int i=0; i < run_freq; i++){
+		main_BST_test(duration, num_DS, num_threads, crossover, keyspace);
 	}
-	
-	else{
-		cout<<"Invalid Data Structure"<<endl;
+	int64_t sum0 = 0;
+	int64_t sum1 = 0;
+	int64_t total_sum = 0;
+	//get the average of the numbers in the array
+	for(int i = 0; i < num_ops0.size(); i++){
+		sum0 += num_ops0[i];	
 	}
+	for(int i = 0; i < num_ops1.size(); i++){
+		sum1 += num_ops1[i];
+	}
+	for(int i = 0; i < total_ops.size(); i++){
+		total_sum += total_ops[i];
+	}
+	int newDuration = interval;
+	for(int i = 0; i< globalOps0.size(); i++){
+		print_function(newDuration, globalOps0[i], globalOps1[i], globalOps0[i] + globalOps1[i]);
+		newDuration += interval;
+	}
+
 	global_cleanup();
 	// cout<<endl;
 }

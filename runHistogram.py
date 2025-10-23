@@ -90,7 +90,7 @@ def run_experiment(output_csv: Path) -> None:
         f'--meta DS_config:numa:regular '
         f'--meta t:40:80 '
         f'--meta b:10:100:1024:2048 '
-        f'--meta book_title:litrature '
+        f'--meta book_title:literature'
         f'>> "{output_csv}"'
     )
     subprocess.run(cmd, shell=True, check=False)
@@ -104,7 +104,7 @@ def graph_data(should_graph: bool, autonuma) -> None:
             output_dir = Path(args.output) / "AN_on"
         elif (autonuma == 0):
             output_dir = Path(args.output) / "AN_off"
-        plot_cmd = f'cd Result/plots && python3 plot_histogram.py "{output_dir}/{output_filename}" --show --save {output_dir}/figs'
+        plot_cmd = f'cd ./Result && python3 plot_histogram.py "{output_dir}/{output_filename}" --show --save {output_dir}/figs'
         subprocess.run(plot_cmd, shell=True, check=False)
 
 
