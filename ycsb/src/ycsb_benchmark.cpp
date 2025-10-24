@@ -100,7 +100,6 @@ void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_
             for (int i = 0; i < num_tables; i++)
             {
                 ht_node1[i] = new HashTable(buckets);
-            
             }
         }
 

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <getopt.h>
+#include <chrono>
+#include <iomanip>
 #include "numathreads.hpp"
 
 
@@ -30,6 +32,14 @@ int duration = 20;
 int interval = 10;
 int num_tables = 10;
 
+extern int64_t ops0;
+extern int64_t ops1;
+extern std::vector<int64_t> globalOps0;
+extern std::vector<int64_t> globalOps1;
+std::vector <int64_t> num_ops1;
+std::vector <int64_t> num_ops0;
+std::vector <int64_t> total_ops;
+
 
 vector<thread_numa<NODE_ZERO>*> numa_thread0;
 vector<thread_numa<NODE_ONE>*> numa_thread1;
@@ -41,6 +51,29 @@ std::thread* init_thread_regular0;
 std::thread* init_thread_regular1;
 
 vector<ZipfianGenerator*> generators;
+
+void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
+	auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    std::cout<<std::put_time(local_time, "%Y-%m-%d") << ", ";
+	std::cout<<std::put_time(local_time, "%H:%M:%S") <<", ";
+	std::cout<<num_tables << ", ";
+	std::cout<<num_threads << ", ";
+	std::cout<<th_config << ", ";
+	std::cout<<DS_config << ", ";
+    std::cout<<bucket_count<<", ";
+    std::cout<<workload_key<<", ";
+	std::cout<<duration << ", ";
+	std::cout<<num_keys<<", ";
+	std::cout<<interval<<", ";
+	std::cout<<ops0 << ", ";
+	std::cout<<ops1 << ", ";
+	std::cout<<totalOps << "\n";
+}
+
+
+
 
 void compile_options(int argc, char *argv[]) {
     static struct option long_options[] = {
@@ -230,6 +263,10 @@ void run_ycsb_benchmark(
         for (auto th : regular_thread0) delete th;
         for (auto th : regular_thread1) delete th;
     }
+
+    num_ops0.push_back(ops0);
+	num_ops1.push_back(ops1);
+	total_ops.push_back(ops0 + ops1);
 }
 
 int main(int argc, char** argv) {
@@ -243,7 +280,7 @@ int main(int argc, char** argv) {
             DS_config = "regular";
         }
     }
-
+    print_function(0, 0, 0, 0); // Print header
     run_ycsb_benchmark(
         workload_key,
         duration,
@@ -267,6 +304,24 @@ int main(int argc, char** argv) {
     for (auto gen : generators) {
         delete gen;
     }
+    int64_t sum0 = 0;
+	int64_t sum1 = 0;
+	int64_t total_sum = 0;
+	//get the average of the numbers in the array
+	for(int i = 0; i < num_ops0.size(); i++){
+		sum0 += num_ops0[i];	
+	}
+	for(int i = 0; i < num_ops1.size(); i++){
+		sum1 += num_ops1[i];
+	}
+	for(int i = 0; i < total_ops.size(); i++){
+		total_sum += total_ops[i];
+	}
+	int newDuration = interval;
+	for(int i = 0; i< globalOps0.size(); i++){
+		print_function(newDuration, globalOps0[i], globalOps1[i], globalOps0[i] + globalOps1[i]);
+		newDuration += interval;
+	}
 
     return 0;
 }
