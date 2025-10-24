@@ -22,8 +22,6 @@ using namespace std;
  * @param DS_config (regular, numa)
  */
 
-
-
 struct WorkloadConfig {
     int read_pct;
     int update_pct;
@@ -35,8 +33,11 @@ struct WorkloadConfig {
 WorkloadConfig selectWorkload(const string &w);
 
 void global_init(int num_threads, int duration, int interval);
-void numa_hash_table_init(int numa_node, std::string DS_config, int buckets);
-void ycsb_test(  int thread_id,
+
+void numa_hash_table_init(int numa_node, std::string DS_config, int buckets, int num_tables);
+
+void ycsb_test(
+    int thread_id,
     int num_total_threads,
     int numa_node,
     int duration,
@@ -44,17 +45,21 @@ void ycsb_test(  int thread_id,
     ZipfianGenerator* gen,
     int num_keys,
     int local_pct,
-    int interval);
+    int interval,
+    int num_tables
+);
+
 void run_ycsb_benchmark(
     const std::string& workload_key,
-    int total_ops,
+    int duration,
     int num_keys,
     double theta,
     int buckets,
     const std::string& locality_key,
     int num_threads,
     const std::string& th_config,
-    const std::string& DS_config
+    const std::string& DS_config,
+    int num_tables
 );
 
 #endif

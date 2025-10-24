@@ -18,11 +18,9 @@ using namespace ycsbc;
 	#define NODE_ONE 1
 #endif
 
-
 int num_threads = 2;
 int bucket_count = 1024;
 string workload_key = "A";
-int total_ops = 1000000;
 int num_keys = 10000;
 double theta = 0.99;
 string locality_key = "80-20";
@@ -30,6 +28,7 @@ string th_config = "regular";
 string DS_config = "regular";
 int duration = 20;
 int interval = 10;
+int num_tables = 10;
 
 
 vector<thread_numa<NODE_ZERO>*> numa_thread0;
@@ -55,6 +54,7 @@ void compile_options(int argc, char *argv[]) {
         {"th_config",  required_argument, nullptr, 'c'},
         {"DS_config",  required_argument, nullptr, 'd'},
         {"interval",   required_argument, nullptr, 'i'},
+        {"tables",     required_argument, nullptr, 'a'},
         {"help",       no_argument,       nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
@@ -62,18 +62,19 @@ void compile_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:l:c:d:i:h", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:l:c:d:i:a:h", long_options, &option_index)) != -1) {
         switch (opt) {
             case 't': num_threads = std::stoi(optarg); break;
             case 'b': bucket_count = std::stoi(optarg); break;
             case 'w': workload_key = optarg; break;
-            case 'u': total_ops = std::stoi(optarg); break;
+            case 'u': duration = std::stoi(optarg); break;
             case 'k': num_keys = std::stoi(optarg); break;
             case 'z': theta = std::stod(optarg); break;
             case 'l': locality_key = optarg; break;
             case 'c': th_config = optarg; break;
             case 'd': DS_config = optarg; break;
             case 'i': interval = std::stoi(optarg); break;
+            case 'a': num_tables = std::stoi(optarg); break;
             case 'h':
                 cout << "Usage: ./runner [options]\n";
                 cout << "Options:\n";
@@ -111,7 +112,6 @@ WorkloadConfig selectWorkload(const string &w) {
     throw runtime_error("Unknown workload " + w);
 }
 
-
 int selectLocality(const string &l) {
     if (l == "80-20") return 80;
     if (l == "50-50") return 50;
@@ -121,39 +121,50 @@ int selectLocality(const string &l) {
 
 void run_ycsb_benchmark(
     const string& workload_key,
-    int total_ops,
+    int duration,
     int num_keys,
     double theta,
     int buckets,
     const string& locality_key,
     int num_threads,
     const string& th_config,
-    const string& DS_config
+    const string& DS_config,
+    int num_tables
 ) 
 {
-    
     if (num_threads <= 0) {
         cerr << "Number of threads must be greater than 0.\n";
         return;
     }
     
-    for (int i = 0; i < num_threads; ++i) {
+    for (int i = 0; i < num_threads; ++i)
         generators.push_back(new ZipfianGenerator(0, num_keys - 1, theta));
-    }
+
     WorkloadConfig cfg = selectWorkload(workload_key);
     int local_pct = selectLocality(locality_key);
     global_init(num_threads, duration, interval);
 
 //Initialization
 	#ifdef PIN_INIT
-    if(th_config == "numa"){
-            init_thread0 = new thread_numa<NODE_ZERO>(numa_hash_table_init, NODE_ZERO , DS_config, buckets);
-            init_thread1 = new thread_numa<NODE_ONE>(numa_hash_table_init,  NODE_ONE , DS_config, buckets);
-    }else{
-        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets);
-        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets);
+    if (th_config == "numa")
+    {
+        init_thread0 = new thread_numa<NODE_ZERO>(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2);
+        init_thread1 = new thread_numa<NODE_ONE>(numa_hash_table_init,  NODE_ONE , DS_config, buckets, num_tables/2);
+    }
+    else 
+    {
+        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2);
+        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2);
     }
 	#endif
+
+    if (th_config == "numa") {
+        init_thread0->join();
+        init_thread1->join();
+    } else {
+        init_thread_regular0->join();
+        init_thread_regular1->join();
+    }
 
     int threads_per_node = num_threads / 2;
     if (th_config == "numa") {
@@ -164,24 +175,24 @@ void run_ycsb_benchmark(
         regular_thread1.resize(threads_per_node);
     }
 
-   
-    int ops_per_thread = total_ops / num_threads;
     auto start = chrono::high_resolution_clock::now();
+    int tables_per_node = num_tables/2;
 
     for (int i = 0; i < threads_per_node; ++i) {
         int thread_id = i;
         int numa_node = 0;
-        if (th_config == "numa") {
+        if (th_config == "numa") 
+        {
             numa_thread0[i] = new thread_numa<NODE_ZERO>(
-               ycsb_test,
+                ycsb_test,
                 thread_id, threads_per_node, numa_node, duration, &cfg, 
-                generators[thread_id], num_keys, local_pct,interval
+                generators[thread_id], num_keys, local_pct, interval, tables_per_node
             );
         } else {
             regular_thread0[i] = new thread(
-               ycsb_test,
+                ycsb_test,
                 thread_id, threads_per_node, numa_node, duration, &cfg, 
-                generators[thread_id], num_keys, local_pct,interval
+                generators[thread_id], num_keys, local_pct, interval, tables_per_node
             );
         }
     }
@@ -191,15 +202,15 @@ void run_ycsb_benchmark(
         int numa_node = 1;
         if (th_config == "numa") {
             numa_thread1[i] = new thread_numa<NODE_ONE>(
-               ycsb_test,
+                ycsb_test,
                 thread_id, threads_per_node, numa_node, duration, &cfg, 
-                generators[thread_id], num_keys, local_pct,interval
+                generators[thread_id], num_keys, local_pct, interval, tables_per_node
             );
         } else {
             regular_thread1[i] = new thread(
                 ycsb_test,
                 thread_id, threads_per_node, numa_node, duration, &cfg, 
-                generators[thread_id], num_keys, local_pct,interval
+                generators[thread_id], num_keys, local_pct, interval, tables_per_node
             );
         }
     }
@@ -219,7 +230,6 @@ void run_ycsb_benchmark(
         for (auto th : regular_thread0) delete th;
         for (auto th : regular_thread1) delete th;
     }
-
 }
 
 int main(int argc, char** argv) {
@@ -236,15 +246,17 @@ int main(int argc, char** argv) {
 
     run_ycsb_benchmark(
         workload_key,
-        total_ops,
+        duration,
         num_keys,
         theta,
         bucket_count,
         locality_key,
         num_threads,
         th_config,
-        DS_config
+        DS_config,
+        num_tables
     );
+
     cout << "YCSB Benchmark Report:\n";
     cout << "----------------------\n";
     cout << "Workload: " << workload_key << ", Threads: " << num_threads 
@@ -255,8 +267,6 @@ int main(int argc, char** argv) {
     for (auto gen : generators) {
         delete gen;
     }
-
-
 
     return 0;
 }

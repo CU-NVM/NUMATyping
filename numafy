@@ -146,6 +146,21 @@ if [ "$SUITE" == "DataStructureTests" ]; then
   fi
 fi
 
+# DataStructureTests suite transformation
+if [ "$SUITE" == "ycsb" ]; then
+  if [ "$DEBUG" == "1" ]; then
+    gdb --args $ROOT_DIR/numa-clang-tool/build/bin/clang-tool  --pass=recurse --input=$ROOT_DIR/numa-clang-tool/input/$SUITE/src/main.cpp,$ROOT_DIR/numa-clang-tool/input/$SUITE/src/ycsb_benchmark.cpp dummy.cpp -- -I $ROOT_DIR/numa-clang-tool/input/$SUITE/include/ -I $ROOT_DIR/numa-clang-tool/input/$SUITE/util/ -I$ROOT_DIR/numaLib/ -I/usr/local/lib/clang/$CLANG_VER/include/ -lnuma -pthread $UMF_INC_DIRS  $UMF_LINK_FLAGS
+    rm -rf $ROOT_DIR/numa-clang-tool/output2/$SUITE
+    cp -rf $ROOT_DIR/numa-clang-tool/output/$SUITE $ROOT_DIR/numa-clang-tool/output2/$SUITE
+    gdb --args $ROOT_DIR/numa-clang-tool/build/bin/clang-tool  --pass=cast --input=$ROOT_DIR/numa-clang-tool/output/$SUITE/src/main.cpp,$ROOT_DIR/numa-clang-tool/output/$SUITE/src/ycsb_benchmark.cpp dummy.cpp -- -I $ROOT_DIR/numa-clang-tool/output/$SUITE/include/ -I $ROOT_DIR/numa-clang-tool/output/$SUITE/util/ -I$ROOT_DIR/numaLib/ -I/usr/local/lib/clang/$CLANG_VER/include/ -lnuma -pthread $UMF_INC_DIRS  $UMF_LINK_FLAGS
+  else
+    $ROOT_DIR/numa-clang-tool/build/bin/clang-tool  --pass=recurse --input=$ROOT_DIR/numa-clang-tool/input/$SUITE/src/main.cpp,$ROOT_DIR/numa-clang-tool/input/$SUITE/src/ycsb_benchmark.cpp dummy.cpp -- -I $ROOT_DIR/numa-clang-tool/input/$SUITE/include/ -I $ROOT_DIR/numa-clang-tool/input/$SUITE/util/ -I$ROOT_DIR/numaLib/ -I/usr/local/lib/clang/$CLANG_VER/include/ -lnuma -pthread $UMF_INC_DIRS  $UMF_LINK_FLAGS
+    rm -rf $ROOT_DIR/numa-clang-tool/output2/$SUITE
+    cp -rf $ROOT_DIR/numa-clang-tool/output/$SUITE $ROOT_DIR/numa-clang-tool/output2/$SUITE
+    $ROOT_DIR/numa-clang-tool/build/bin/clang-tool  --pass=cast --input=$ROOT_DIR/numa-clang-tool/output/$SUITE/src/main.cpp,$ROOT_DIR/numa-clang-tool/output/$SUITE/src/ycsb_benchmark.cpp dummy.cpp -- -I $ROOT_DIR/numa-clang-tool/output/$SUITE/include/ -I $ROOT_DIR/numa-clang-tool/output/$SUITE/util/ -I$ROOT_DIR/numaLib/ -I/usr/local/lib/clang/$CLANG_VER/include/ -lnuma -pthread $UMF_INC_DIRS  $UMF_LINK_FLAGS
+  fi
+fi
+
 # ============================================================================
 # Final Output
 # ============================================================================
