@@ -28,8 +28,8 @@ double theta = 0.99;
 string locality_key = "80-20";
 string th_config = "regular";
 string DS_config = "regular";
-int duration=20;
-int interval=10;
+int duration = 20;
+int interval = 10;
 
 
 vector<thread_numa<NODE_ZERO>*> numa_thread0;
@@ -44,17 +44,17 @@ std::thread* init_thread_regular1;
 vector<ZipfianGenerator*> generators;
 
 void compile_options(int argc, char *argv[]) {
-    //todo: duration interval
     static struct option long_options[] = {
         {"threads",    required_argument, nullptr, 't'},
         {"buckets",    required_argument, nullptr, 'b'},
         {"workload",   required_argument, nullptr, 'w'},
-        {"ops",        required_argument, nullptr, 'o'},
+        {"duration",   required_argument, nullptr, 'u'},
         {"keys",       required_argument, nullptr, 'k'},
         {"theta",      required_argument, nullptr, 'z'},
         {"locality",   required_argument, nullptr, 'l'},
         {"th_config",  required_argument, nullptr, 'c'},
         {"DS_config",  required_argument, nullptr, 'd'},
+        {"interval",   required_argument, nullptr, 'i'},
         {"help",       no_argument,       nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
@@ -62,17 +62,18 @@ void compile_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "t:b:w:o:k:z:l:c:d:h", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:l:c:d:i:h", long_options, &option_index)) != -1) {
         switch (opt) {
             case 't': num_threads = std::stoi(optarg); break;
             case 'b': bucket_count = std::stoi(optarg); break;
             case 'w': workload_key = optarg; break;
-            case 'o': total_ops = std::stoi(optarg); break;
+            case 'u': total_ops = std::stoi(optarg); break;
             case 'k': num_keys = std::stoi(optarg); break;
             case 'z': theta = std::stod(optarg); break;
             case 'l': locality_key = optarg; break;
             case 'c': th_config = optarg; break;
             case 'd': DS_config = optarg; break;
+            case 'i': interval = std::stoi(optarg); break;
             case 'h':
                 cout << "Usage: ./runner [options]\n";
                 cout << "Options:\n";
