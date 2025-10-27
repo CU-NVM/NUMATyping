@@ -60,7 +60,7 @@ void global_init(int num_threads, int duration, int interval) {
 void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_tables) {
 
     if(node==0){
-        cout<< "DS CONFIG is "<< DS_config << endl;
+        //cout<< "DS CONFIG is "<< DS_config << endl;
         //resize vectors
         ht_node0.resize(num_tables);
         ht_node0_locks.resize(num_tables);

@@ -8,7 +8,6 @@
 #include <iomanip>
 #include "numathreads.hpp"
 
-
 using namespace std;
 using namespace ycsbc;
 
@@ -40,7 +39,6 @@ std::vector <int64_t> num_ops1;
 std::vector <int64_t> num_ops0;
 std::vector <int64_t> total_ops;
 
-
 vector<thread_numa<NODE_ZERO>*> numa_thread0;
 vector<thread_numa<NODE_ONE>*> numa_thread1;
 vector<thread*> regular_thread0;
@@ -52,7 +50,7 @@ std::thread* init_thread_regular1;
 
 vector<ZipfianGenerator*> generators;
 
-void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
+void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps) {
 	auto now = std::chrono::system_clock::now();
     std::time_t now_time = std::chrono::system_clock::to_time_t(now);
     std::tm* local_time = std::localtime(&now_time);
@@ -72,8 +70,9 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
 	std::cout<<totalOps << "\n";
 }
 
-
-
+void print_header() {
+    std::cout << "Date, Time, Num_Tables, Num_Threads, Thread_Config, DS_Config, Buckets, Workload, Duration(s), Num_Keys, Interval(s), Ops_Node0, Ops_Node1, Total_Ops\n";
+}
 
 void compile_options(int argc, char *argv[]) {
     static struct option long_options[] = {
@@ -280,6 +279,8 @@ int main(int argc, char** argv) {
             DS_config = "regular";
         }
     }
+
+    print_header();
     print_function(0, 0, 0, 0); // Print header
     run_ycsb_benchmark(
         workload_key,
@@ -294,12 +295,13 @@ int main(int argc, char** argv) {
         num_tables
     );
 
+    /*
     cout << "YCSB Benchmark Report:\n";
     cout << "----------------------\n";
     cout << "Workload: " << workload_key << ", Threads: " << num_threads 
         << ", Locality: " << locality_key << endl;
     cout << "Thread Config: " << th_config << ", DS Config: " << DS_config << endl;
-
+    */
 
     for (auto gen : generators) {
         delete gen;
