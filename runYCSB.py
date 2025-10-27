@@ -87,12 +87,12 @@ def run_experiment(output_csv: Path) -> None:
         f'--meta th_config:numa:regular '
         f'--meta DS_config:numa:regular '
         f'--meta t:10:20:40:80 '
-        f'--meta b:1000:2000:10000:20000:100000 '
+        f'--meta b:1000:2000:10000:20000 '
         f'--meta w:A:B:C:D:E '
-        f'--meta u:30:60:120 '
-        f'--meta k:1000:10000:100000:1000000 '
+        f'--meta u:30:120 '
+        f'--meta k:1000:10000:100000 '
         f'--meta l:80-20:20-80:50-50 '
-        f'--meta i:5:10:15 '
+        f'--meta i:10 '
         f'--meta a:100:1000:10000:50000 '
         f'>> "{output_csv}"'
     )
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     write_header_once(output_file_path)
 
     # 2) Build
-    compile_experiment(args.UMF)
+    #compile_experiment(args.UMF)
 
     # 3) Run and append results
     run_experiment(output_file_path)

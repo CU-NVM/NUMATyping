@@ -64,6 +64,7 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps) 
     std::cout<<workload_key<<", ";
 	std::cout<<duration << ", ";
 	std::cout<<num_keys<<", ";
+	std::cout<<locality_key<<", ";
 	std::cout<<interval<<", ";
 	std::cout<<ops0 << ", ";
 	std::cout<<ops1 << ", ";
@@ -71,7 +72,7 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps) 
 }
 
 void print_header() {
-    std::cout << "Date, Time, Num_Tables, Num_Threads, Thread_Config, DS_Config, Buckets, Workload, Duration(s), Num_Keys, Interval(s), Ops_Node0, Ops_Node1, Total_Ops\n";
+    std::cout << "Date, Time, Num_Tables, Num_Threads, Thread_Config, DS_Config, Buckets, Workload, Duration(s), Num_Keys, Locality, Interval(s), Ops_Node0, Ops_Node1, Total_Ops\n";
 }
 
 void compile_options(int argc, char *argv[]) {
