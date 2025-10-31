@@ -149,7 +149,7 @@ void ycsb_test(
 
 	pthread_barrier_wait(&bar);
 
-	int64_t ops;
+	int64_t ops = 0;
 	thread_local vector<int64_t> localOps;
 	localOps.resize(duration/interval);
 	auto startTimer = std::chrono::steady_clock::now();
