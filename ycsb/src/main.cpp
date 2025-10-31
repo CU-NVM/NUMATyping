@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    print_header();
+    //print_header();
     print_function(0, 0, 0, 0); // Print header
     run_ycsb_benchmark(
         workload_key,

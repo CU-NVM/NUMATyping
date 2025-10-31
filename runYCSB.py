@@ -67,8 +67,8 @@ def compile_experiment(UMF: bool) -> None:
 def write_header_once(csv_path: Path) -> None:
     """Write header only if file doesn't exist or is empty."""
     header = (
-        "Date, Time, num_threads, thread_config, DS_config, bucket_count, run_freq, FileRead(ms), "
-        "PerNodeMerge(ms), SingleThreadMerge(ms), SingleNodeMerge(ms), MultiNodeMerge(ms), TotalLat(ms)\n"
+        "Date, Time, num_tables,  num_threads, thread_config, DS_config, buckets, workload, duration, "
+        "num_keys, locality, interval, ops_node0, ops_node1, total_ops\n"
     )
     if not csv_path.exists() or csv_path.stat().st_size == 0:
         # Ensure parent dir exists
@@ -86,14 +86,14 @@ def run_experiment(output_csv: Path) -> None:
         f'./bin/ycsb '
         f'--meta th_config:numa:regular '
         f'--meta DS_config:numa:regular '
-        f'--meta t:10:20:40:80 '
-        f'--meta b:1000:2000:10000:20000 '
-        f'--meta w:A:B:C:D:E '
-        f'--meta u:30:120 '
-        f'--meta k:1000:10000:100000 '
+        f'--meta t:40:80 '
+        f'--meta b:100 '
+        f'--meta w:A:B:C:D:E:F '
+        f'--meta u:120 '
+        f'--meta k:10000000 '
         f'--meta l:80-20:20-80:50-50 '
-        f'--meta i:10 '
-        f'--meta a:100:1000:10000:50000 '
+        f'--meta i:20 '
+        f'--meta a:100 '
         f'>> "{output_csv}"'
     )
     subprocess.run(cmd, shell=True, check=False)
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     write_header_once(output_file_path)
 
     # 2) Build
-    #compile_experiment(args.UMF)
+    compile_experiment(args.UMF)
 
     # 3) Run and append results
     run_experiment(output_file_path)
