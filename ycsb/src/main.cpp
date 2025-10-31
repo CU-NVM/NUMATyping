@@ -199,6 +199,8 @@ void run_ycsb_benchmark(
         init_thread_regular1->join();
     }
 
+    prefill_hash_tables(num_keys, num_tables);
+
     int threads_per_node = num_threads / 2;
     if (th_config == "numa") {
         numa_thread0.resize(threads_per_node);

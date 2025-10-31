@@ -126,6 +126,41 @@ void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_
     
 }
 
+unsigned long prefill_hash(const char* key) {
+    unsigned long hash = 5381;
+    int c;
+    while ((c = *key++)) {
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    }
+    return hash;
+}
+
+void prefill_hash_tables(int num_keys_to_fill, int total_num_tables) {
+    // num_tables from main.cpp is the total number of tables
+    int tables_per_node = total_num_tables / 2;
+    int actual_total_tables = tables_per_node * 2;
+
+    if (actual_total_tables <= 0 || ht_node0.empty() || ht_node1.empty()) {
+        std::cerr << "Prefill Error: Hash tables not initialized or num_tables < 2." << std::endl;
+        return;
+    }
+
+    for (long long i = 0; i < num_keys_to_fill; ++i) {
+        std::string key = "key" + std::to_string(i);
+        
+        // hash into a table
+        unsigned long key_hash = prefill_hash(key.c_str());
+        int table_index = key_hash % actual_total_tables;
+        // insert key i into the table the same way as in ycsb_test
+        if (table_index < tables_per_node) {
+            ht_node0[table_index]->insert(key.c_str());
+        } else {
+            int node1_index = table_index - tables_per_node;
+            ht_node1[node1_index]->insert(key.c_str());
+        }
+    }
+}
+
 void ycsb_test(
     int thread_id,
     int num_total_threads,

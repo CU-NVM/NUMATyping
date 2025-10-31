@@ -62,4 +62,6 @@ void run_ycsb_benchmark(
     int num_tables
 );
 
+void prefill_hash_tables(int num_keys_to_fill, int total_num_tables);
+
 #endif
