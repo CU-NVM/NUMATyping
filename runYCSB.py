@@ -87,13 +87,13 @@ def run_experiment(output_csv: Path) -> None:
         f'--meta th_config:numa:regular '
         f'--meta DS_config:numa:regular '
         f'--meta t:40:80 '
-        f'--meta b:100 '
+        f'--meta b:13334 '
         f'--meta w:A:B:C:D:E:F '
         f'--meta u:120 '
         f'--meta k:10000000 '
         f'--meta l:80-20:20-80:50-50 '
         f'--meta i:20 '
-        f'--meta a:100 '
+        f'--meta a:1000 '
         f'>> "{output_csv}"'
     )
     subprocess.run(cmd, shell=True, check=False)
