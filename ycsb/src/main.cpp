@@ -149,6 +149,9 @@ int selectLocality(const string &l) {
     if (l == "80-20") return 80;
     if (l == "50-50") return 50;
     if (l == "20-80") return 20;
+    if (l == "90-10") return 90;
+    if (l == "95-5") return 95;
+    if (l == "98-2") return 98;
     throw runtime_error("Unknown locality split. Use 80-20, 50-50, or 20-80." + l);
 }
 
