@@ -34,7 +34,7 @@ WorkloadConfig selectWorkload(const string &w);
 
 void global_init(int num_threads, int duration, int interval);
 
-void numa_hash_table_init(int numa_node, std::string DS_config, int buckets, int num_tables);
+void numa_hash_table_init(int numa_node, std::string DS_config, int buckets, int num_tables, int num_keys);
 
 void ycsb_test(
     int thread_id,
@@ -61,7 +61,5 @@ void run_ycsb_benchmark(
     const std::string& DS_config,
     int num_tables
 );
-
-void prefill_hash_tables(int num_keys_to_fill, int total_num_tables);
 
 #endif

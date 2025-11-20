@@ -184,13 +184,13 @@ void run_ycsb_benchmark(
 	#ifdef PIN_INIT
     if (th_config == "numa")
     {
-        init_thread0 = new thread_numa<NODE_ZERO>(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2);
-        init_thread1 = new thread_numa<NODE_ONE>(numa_hash_table_init,  NODE_ONE , DS_config, buckets, num_tables/2);
+        init_thread0 = new thread_numa<NODE_ZERO>(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
+        init_thread1 = new thread_numa<NODE_ONE>(numa_hash_table_init,  NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
     }
     else 
     {
-        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2);
-        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2);
+        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
+        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
     }
 	#endif
 
@@ -201,8 +201,6 @@ void run_ycsb_benchmark(
         init_thread_regular0->join();
         init_thread_regular1->join();
     }
-
-    prefill_hash_tables(num_keys, num_tables);
 
     int threads_per_node = num_threads / 2;
     if (th_config == "numa") {

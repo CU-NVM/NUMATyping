@@ -46,6 +46,15 @@ int64_t ops1=0;
 pthread_barrier_t bar;
 pthread_barrier_t init_bar;
 
+unsigned long prefill_hash(const char* key) {
+    unsigned long hash = 5381;
+    int c;
+    while ((c = *key++)) {
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    }
+    return hash;
+}
+
 void global_init(int num_threads, int duration, int interval) {
 	pthread_barrier_init(&bar, NULL, num_threads);
 	pthread_barrier_init(&init_bar, NULL, 2);
@@ -57,25 +66,26 @@ void global_init(int num_threads, int duration, int interval) {
 	globalLK = new std::mutex();
 }
 
-void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_tables) {
+void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_tables, int num_keys) {
 
     if(node==0){
-        //cout<< "DS CONFIG is "<< DS_config << endl;
-        //resize vectors
         ht_node0.resize(num_tables);
         ht_node0_locks.resize(num_tables);
         ht_node1.resize(num_tables);
         ht_node1_locks.resize(num_tables);
     }
     pthread_barrier_wait(&init_bar);
-    if(node == 0){
-        if (DS_config == "numa") {
-            for (int i = 0; i < num_tables; i++)
+
+    if(node == 0) 
+    {
+        if (DS_config == "numa") 
+        {
+            for (int i = 0; i < num_tables; i++) 
             {
                 ht_node0[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ZERO>(buckets));
             }
-        }
-        else
+        } 
+        else 
         {
             for (int i = 0; i < num_tables; i++) 
             {
@@ -83,56 +93,70 @@ void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_
             }
         }
 
-        for(int i = 0; i < num_tables; i++) {
+        for (int i = 0; i < num_tables; i++) {
             ht_node0_locks[i] = new std::mutex();
         }
     }
-    else if(node == 1) {
-        if (DS_config == "numa") {
-            for (int i = 0; i < num_tables; i++)
+    else if(node == 1) 
+    {
+        if (DS_config == "numa") 
+        {
+            for (int i = 0; i < num_tables; i++) 
             {
                 ht_node1[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ONE>(buckets));
             }
-                
         } 
         else 
         {   
-            for (int i = 0; i < num_tables; i++)
+            for (int i = 0; i < num_tables; i++) 
             {
                 ht_node1[i] = new HashTable(buckets);
             }
         }
-
-        for(int i = 0; i < num_tables; i++) {
+        for(int i = 0; i < num_tables; i++) 
+        {
             ht_node1_locks[i] = new std::mutex();
         }   
     }
+    
     pthread_barrier_wait(&init_bar);
-    /*if (ht_node0 == nullptr || ht_node1 == nullptr) {
-        cerr << "Failed to allocate hash tables!" << endl;
-        return;
-        cout<<ht_node0<<endl;
-        cout<<ht_node1<<endl;
-    }*/
-    for (int i = 0; i < num_tables; i++)
+
+    for (int i = 0; i < num_tables; i++) 
     {
-        if (ht_node0[i] == nullptr || ht_node1[i] == nullptr)
+        if (ht_node0[i] == nullptr || ht_node1[i] == nullptr) 
         {
             cerr << "Hash table allocation error!" << endl;
             return;
         }
     }
-    pthread_barrier_wait(&init_bar);
-    
-}
 
-unsigned long prefill_hash(const char* key) {
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *key++)) {
-        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    // 'num_tables' passed here is actually tables_per_node (main passes num_tables/2)
+    int tables_per_node = num_tables; 
+    int actual_total_tables = tables_per_node * 2;
+
+    for (long long i = 0; i < num_keys; ++i) {
+        std::string key = "key" + std::to_string(i);
+        unsigned long key_hash = prefill_hash(key.c_str());
+        int table_index = key_hash % actual_total_tables;
+
+        if (node == 0) 
+        {
+            if (table_index < tables_per_node) 
+            {
+                ht_node0[table_index]->insert(key.c_str());
+            }
+        } 
+        else if (node == 1) 
+        {
+            if (table_index >= tables_per_node) 
+            {
+                int local_index = table_index - tables_per_node;
+                ht_node1[local_index]->insert(key.c_str());
+            }
+        }
     }
-    return hash;
+
+    pthread_barrier_wait(&init_bar);
 }
 
 void prefill_hash_tables(int num_keys_to_fill, int total_num_tables) {
