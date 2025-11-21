@@ -1,7 +1,7 @@
 # Compiler and basic settings
 CC         := clang++
 CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1
-LINK_FLAGS := -lnuma -std=c++20 -pthread
+LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
 HOME_DIR   := $(shell echo $$HOME)
 
 # Include directories

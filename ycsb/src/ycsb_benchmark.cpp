@@ -134,25 +134,33 @@ void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_
     int tables_per_node = num_tables; 
     int actual_total_tables = tables_per_node * 2;
 
-    for (long long i = 0; i < num_keys; ++i) {
-        std::string key = "key" + std::to_string(i);
+    // Setup Random Number Generator
+    // Use node ID to seed differently so threads don't pick the exact same sequence
+    std::random_device rd;
+    std::mt19937_64 rng(rd() + node); 
+    std::uniform_int_distribution<long long> dist(0, num_keys - 1);
+    long long iterations = num_keys / 2;
+
+    for (long long i = 0; i < iterations; ++i) {
+        long long key_id = dist(rng); 
+        std::string key = "key" + std::to_string(key_id);
         unsigned long key_hash = prefill_hash(key.c_str());
         int table_index = key_hash % actual_total_tables;
 
-        if (node == 0) 
-        {
-            if (table_index < tables_per_node) 
-            {
+        if (node == 0) {
+            // If random key belongs to Node 0, insert it.
+            if (table_index < tables_per_node) {
                 ht_node0[table_index]->insert(key.c_str());
             }
+            // If it belongs to Node 1, skip it.
         } 
-        else if (node == 1) 
-        {
-            if (table_index >= tables_per_node) 
-            {
-                int local_index = table_index - tables_per_node;
-                ht_node1[local_index]->insert(key.c_str());
+        else if (node == 1) {
+            // If random key belongs to Node 1, insert it.
+            if (table_index >= tables_per_node) {
+                int local_idx = table_index - tables_per_node;
+                ht_node1[local_idx]->insert(key.c_str());
             }
+            // If it belongs to Node 0, skip it.
         }
     }
 
