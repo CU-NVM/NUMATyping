@@ -92,10 +92,10 @@ def flame_ycsb_experiment(output_dir: Path) -> None:
     ds_config = "numa"
     t = 40
     b = 1333
-    w = "B"
-    u =180
+    w = "A"
+    u = 180
     k = 10000000
-    l = "80-20"
+    l = "90-10"
     i = 10
     a = 1000
 
