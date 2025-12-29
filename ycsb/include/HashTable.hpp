@@ -16,6 +16,7 @@ public:
     ~HashTable();
     int hash(const char* key);
     void insert(const char* key);
+    void insert(const char* key, int count);
     void remove(const char* key);
     int getCount(const char* key);
     bool updateCount(const char* key, int count);
@@ -69,6 +70,22 @@ void HashTable::insert(const char* word){
     table[idx] = newNode;
 }
 
+void HashTable::insert(const char* word, int count){
+    int idx = hash(word);
+    HashNode* curr = table[idx];
+    while(curr){
+        if(strcmp(curr->key, word)==0){
+            curr->count += count;
+            return;
+        }
+        curr = curr->next;
+    }
+    HashNode* newNode = new HashNode(word);
+    newNode->count = count;
+    newNode->next = table[idx];
+    table[idx] = newNode;
+}
+
 void HashTable::remove(const char* word){
     int idx = hash(word);
     HashNode* curr = table[idx];
@@ -101,13 +118,23 @@ int HashTable::getCount(const char* word){
 }
 
 bool HashTable::updateCount(const char* word, int count){
-    int idx = hash(word);
+   int idx = hash(word);
     HashNode* curr = table[idx];
-    while(curr){
-        if(strcmp(curr->key, word)==0){
-            curr->count += count;
+    HashNode* prev = nullptr;
+
+    while (curr) {
+        if (strcmp(curr->key, word) == 0) {
+            int new_count = curr->count + count;
+            if (prev)
+                prev->next = curr->next;
+            else
+                table[idx] = curr->next;
+            delete curr;
+
+            insert(word, new_count);
             return true;
         }
+        prev = curr;
         curr = curr->next;
     }
     return false;

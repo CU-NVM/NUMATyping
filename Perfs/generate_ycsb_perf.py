@@ -121,13 +121,13 @@ def perf_ycsb_experiment(output_dir: Path) -> None:
 
     # Fixed YCSB parameters
     th_config = "numa"
-    ds_config = "numa"
-    t = 40
-    b = 1333
+    ds_config = "regular"
+    t = 80
+    b = 13330
     w = "D"
-    u = 180
-    k = 10000000
-    l = "90-10"
+    u = 60
+    k = 100000000
+    l = "80-20"
     i = 10
     a = 1000
 

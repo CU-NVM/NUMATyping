@@ -192,7 +192,11 @@ void run_ycsb_benchmark(
         init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
         init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
     }
-	#endif
+	#else
+        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
+        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
+    #endif
+
 
     if (th_config == "numa") {
         init_thread0->join();

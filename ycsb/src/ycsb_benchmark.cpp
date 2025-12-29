@@ -227,12 +227,14 @@ void ycsb_test(
     uniform_int_distribution<int> op_dist(1, 100);
     uniform_int_distribution<int> locality_dist(1, 100);
     uniform_int_distribution<int> ht_dist(0, num_tables-1); // already passed in as num_tables/2 aka tables_per_node
+    uniform_int_distribution<int> key_dist(0, num_keys-1);
 
 	while (duration_cast<seconds>(steady_clock::now() - startTimer).count() < duration) {
-		uint64_t key_id = gen->Next();
+		//uint64_t key_id = gen->Next();
+        uint64_t key_id = key_dist(rng);
         string key = "key" + to_string(key_id);
         int locality_choice = locality_dist(rng);
-        int ht_choice = ht_dist(rng);
+        int ht_choice = prefill_hash(key.c_str())%num_tables;
 
         if (numa_node == 0) {
             if (locality_choice <= local_pct) {
@@ -367,14 +369,12 @@ void ycsb_test(
 		for(int i=0; i<localOps.size(); i++){
 			globalOps0[i] += localOps[i];
 		}
-		ops0 = globalOps0[globalOps0.size()-1];
 	}
 	else
 	{
 		for(int i=0; i<localOps.size(); i++){
 			globalOps1[i] += localOps[i];
 		}
-		ops1 = globalOps1[globalOps1.size()-1];
 	}
 	globalLK->unlock();
 

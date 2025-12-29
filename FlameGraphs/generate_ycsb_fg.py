@@ -89,13 +89,13 @@ def flame_ycsb_experiment(output_dir: Path) -> None:
 
     # Fixed parameters
     th_config = "numa"
-    ds_config = "numa"
-    t = 40
+    ds_config = "regular"
+    t = 80
     b = 1333
-    w = "A"
-    u = 180
+    w = "D"
+    u = 60
     k = 10000000
-    l = "90-10"
+    l = "80-20"
     i = 10
     a = 1000
 
