@@ -22,7 +22,7 @@ using namespace ycsbc;
 int num_threads = 2;
 int bucket_count = 1024;
 string workload_key = "A";
-int num_keys = 10000;
+long long num_keys = 10000;
 double theta = 0.99;
 string locality_key = "80-20";
 string th_config = "regular";
@@ -43,8 +43,8 @@ vector<thread_numa<NODE_ZERO>*> numa_thread0;
 vector<thread_numa<NODE_ONE>*> numa_thread1;
 vector<thread*> regular_thread0;
 vector<thread*> regular_thread1;
-thread_numa<NODE_ZERO>* init_thread0;
-thread_numa<NODE_ONE>* init_thread1;
+vector<thread_numa<NODE_ZERO>*> init_thread0;
+vector<thread_numa<NODE_ONE>*> init_thread1;
 std::thread* init_thread_regular0;
 std::thread* init_thread_regular1;
 
@@ -101,7 +101,7 @@ void compile_options(int argc, char *argv[]) {
             case 'b': bucket_count = std::stoi(optarg); break;
             case 'w': workload_key = optarg; break;
             case 'u': duration = std::stoi(optarg); break;
-            case 'k': num_keys = std::stoi(optarg); break;
+            case 'k': num_keys = std::stoll(optarg); break;
             case 'z': theta = std::stod(optarg); break;
             case 'l': locality_key = optarg; break;
             case 'c': th_config = optarg; break;
@@ -158,7 +158,7 @@ int selectLocality(const string &l) {
 void run_ycsb_benchmark(
     const string& workload_key,
     int duration,
-    int num_keys,
+    long long num_keys,
     double theta,
     int buckets,
     const string& locality_key,
@@ -179,34 +179,43 @@ void run_ycsb_benchmark(
     WorkloadConfig cfg = selectWorkload(workload_key);
     int local_pct = selectLocality(locality_key);
     global_init(num_threads, duration, interval);
-
+    int threads_per_node = num_threads / 2;
 //Initialization
-	#ifdef PIN_INIT
-    if (th_config == "numa")
-    {
-        init_thread0 = new thread_numa<NODE_ZERO>(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
-        init_thread1 = new thread_numa<NODE_ONE>(numa_hash_table_init,  NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
-    }
-    else 
-    {
-        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
-        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
-    }
+	#ifdef PIN_INIT 
+        init_thread0.resize(threads_per_node);
+        init_thread1.resize(threads_per_node);
+        for(int i=0; i< threads_per_node; ++i)
+        {   int thread_id = i;
+            int numa_node = 0;
+            init_thread0[i] = new thread_numa<NODE_ZERO>(numa_hash_table_init, thread_id ,numa_node, DS_config, buckets, num_tables/2, num_keys, num_threads);
+        }
+
+        for(int i=0; i< threads_per_node; ++i)
+        {   
+            int thread_id = i + threads_per_node;
+            int numa_node = 1;
+            init_thread1[i] = new thread_numa<NODE_ONE>(numa_hash_table_init, thread_id ,numa_node, DS_config, buckets, num_tables/2, num_keys, num_threads);
+        }
 	#else
-        init_thread_regular0 = new thread(numa_hash_table_init, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys);
-        init_thread_regular1 = new thread(numa_hash_table_init, NODE_ONE , DS_config, buckets, num_tables/2, num_keys);
+        init_thread_regular0 = new thread(numa_hash_table_init, 0, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys, num_threads);
+        init_thread_regular1 = new thread(numa_hash_table_init, threads_per_node, NODE_ONE , DS_config, buckets, num_tables/2, num_keys, num_threads);
     #endif
 
 
-    if (th_config == "numa") {
-        init_thread0->join();
-        init_thread1->join();
-    } else {
+    #ifdef PIN_INIT 
+        for(auto th : init_thread0) th->join();
+        for(auto th : init_thread1) th->join();
+        for(auto th : init_thread0) delete th;
+        for(auto th : init_thread1) delete th;
+    #else
         init_thread_regular0->join();
         init_thread_regular1->join();
-    }
+        delete init_thread_regular0;
+        delete init_thread_regular1;
+    #endif
+//End Initialization
 
-    int threads_per_node = num_threads / 2;
+ 
     if (th_config == "numa") {
         numa_thread0.resize(threads_per_node);
         numa_thread1.resize(threads_per_node);

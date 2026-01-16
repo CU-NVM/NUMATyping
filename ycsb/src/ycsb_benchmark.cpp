@@ -30,7 +30,8 @@ using namespace std::chrono;
 	#define NODE_ZERO 0
 	#define NODE_ONE 1
 #endif
-
+int global_successful_inserts;
+int global_successful_init_inserts;
 std::vector<HashTable*> ht_node0;
 std::vector<HashTable*> ht_node1;
 std::vector<std::mutex*> ht_node0_locks;
@@ -57,89 +58,86 @@ unsigned long prefill_hash(const char* key) {
 
 void global_init(int num_threads, int duration, int interval) {
 	pthread_barrier_init(&bar, NULL, num_threads);
-	pthread_barrier_init(&init_bar, NULL, 2);
+	pthread_barrier_init(&init_bar, NULL, num_threads);
 	globalOps0.resize(duration/interval);
 	globalOps1.resize(duration/interval);
 	ops0 = 0;
 	ops1 = 0;
 	printLK = new std::mutex();
 	globalLK = new std::mutex();
+    global_successful_init_inserts=0;
+    global_successful_inserts=0;
 }
+void numa_hash_table_init(int thread_id,
+                          int node,
+                          std::string DS_config,
+                          int buckets,
+                          int num_tables,        // tables per node
+                          long long num_keys,
+                          int num_total_threads)
+{
+    int threads_per_node = num_total_threads / 2;
 
-void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_tables, int num_keys) {
-
-    if(node==0){
+    // ------------------ GLOBAL RESIZE (ONCE) ------------------
+    if (thread_id == 0) {
         ht_node0.resize(num_tables);
-        ht_node0_locks.resize(num_tables);
         ht_node1.resize(num_tables);
+        
+        ht_node0_locks.resize(num_tables);
         ht_node1_locks.resize(num_tables);
-    }
-    pthread_barrier_wait(&init_bar);
-
-    if(node == 0) 
-    {
-        if (DS_config == "numa") 
-        {
-            for (int i = 0; i < num_tables; i++) 
-            {
-                ht_node0[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ZERO>(buckets));
-            }
-        } 
-        else 
-        {
-            for (int i = 0; i < num_tables; i++) 
-            {
-                ht_node0[i] = new HashTable(buckets);
-            }
-        }
 
         for (int i = 0; i < num_tables; i++) {
             ht_node0_locks[i] = new std::mutex();
+            ht_node1_locks[i] = new std::mutex();
         }
     }
-    else if(node == 1) 
-    {
-        if (DS_config == "numa") 
-        {
-            for (int i = 0; i < num_tables; i++) 
-            {
-                ht_node1[i] = reinterpret_cast<HashTable*>(new numa<HashTable, NODE_ONE>(buckets));
+    pthread_barrier_wait(&init_bar);
+
+    // ------------------ GLOBAL ALLOCATION (ONCE) ------------------
+    if (thread_id == 0) {
+        for (int i = 0; i < num_tables; i++) {
+            if (DS_config == "numa") {
+                ht_node0[i] = reinterpret_cast<HashTable*>( new numa<HashTable, NODE_ZERO>(buckets));
+                
+            } else {
+                ht_node0[i] = new HashTable(buckets);
             }
-        } 
-        else 
-        {   
-            for (int i = 0; i < num_tables; i++) 
-            {
+        }
+    }
+    if(thread_id == threads_per_node  && node == 1) {
+        for (int i = 0; i < num_tables; i++) {
+            if (DS_config == "numa") {
+                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, NODE_ONE>(buckets));
+            }
+            else {
                 ht_node1[i] = new HashTable(buckets);
             }
         }
-        for(int i = 0; i < num_tables; i++) 
-        {
-            ht_node1_locks[i] = new std::mutex();
-        }   
     }
-    
     pthread_barrier_wait(&init_bar);
 
-    for (int i = 0; i < num_tables; i++) 
-    {
-        if (ht_node0[i] == nullptr || ht_node1[i] == nullptr) 
-        {
-            cerr << "Hash table allocation error!" << endl;
-            return;
+
+    // ------------------ SANITY CHECK ------------------
+    if (thread_id == 0) {
+        for (int i = 0; i < num_tables; i++) {
+            if (ht_node0[i] == nullptr || ht_node1[i] == nullptr || ht_node0_locks[i] == nullptr || ht_node1_locks[i] == nullptr) {
+                std::cerr << "Hash table allocation error!" << std::endl;
+                return;
+            }
         }
     }
 
-    // 'num_tables' passed here is actually tables_per_node (main passes num_tables/2)
-    int tables_per_node = num_tables; 
-    int actual_total_tables = tables_per_node * 2;
+    pthread_barrier_wait(&init_bar);
 
-    // Setup Random Number Generator
-    // Use node ID to seed differently so threads don't pick the exact same sequence
+    // ------------------ RNG (UNIQUE PER THREAD) ------------------
     std::random_device rd;
-    std::mt19937_64 rng(rd() + node); 
+    std::mt19937_64 rng(rd() ^ (node << 16) ^ thread_id);
     std::uniform_int_distribution<long long> dist(0, num_keys - 1);
-    long long iterations = num_keys / 2;
+    int tables_per_node = num_tables;
+    long long local_successful_inserts = 0;
+    int actual_total_tables = tables_per_node * 2;
+    // ------------------ PREFILL LOOP ------------------
+    long long iterations = (num_keys / 2)/ num_total_threads;
 
     for (long long i = 0; i < iterations; ++i) {
         long long key_id = dist(rng); 
@@ -150,7 +148,12 @@ void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_
         if (node == 0) {
             // If random key belongs to Node 0, insert it.
             if (table_index < tables_per_node) {
-                ht_node0[table_index]->insert(key.c_str());
+                ht_node0_locks[table_index]->lock();
+                bool result = ht_node0[table_index]->insert(key.c_str());
+                if (result) {
+                    local_successful_inserts++;
+                }
+                ht_node0_locks[table_index]->unlock();  
             }
             // If it belongs to Node 1, skip it.
         } 
@@ -158,14 +161,33 @@ void numa_hash_table_init(int node, std::string DS_config, int buckets, int num_
             // If random key belongs to Node 1, insert it.
             if (table_index >= tables_per_node) {
                 int local_idx = table_index - tables_per_node;
-                ht_node1[local_idx]->insert(key.c_str());
+                ht_node1_locks[local_idx]->lock();
+                bool result = ht_node1[local_idx]->insert(key.c_str());
+                if (result) {
+                    local_successful_inserts++;
+                }
+                ht_node1_locks[local_idx]->unlock();
             }
             // If it belongs to Node 0, skip it.
         }
     }
+    // ------------------ REDUCTION ------------------
+    pthread_barrier_wait(&init_bar);
+
+    globalLK->lock();
+        global_successful_init_inserts += local_successful_inserts;
+    globalLK->unlock();
+
+    pthread_barrier_wait(&init_bar);
+
+    if (thread_id == 0) {
+        std::cout << "Prefill complete. Total inserts = "
+                  << global_successful_init_inserts << std::endl;
+    }
 
     pthread_barrier_wait(&init_bar);
 }
+
 
 void prefill_hash_tables(int num_keys_to_fill, int total_num_tables) {
     // num_tables from main.cpp is the total number of tables
@@ -200,7 +222,7 @@ void ycsb_test(
     int duration,
     const WorkloadConfig* cfg,
     ZipfianGenerator* gen,
-    int num_keys,
+    long long num_keys,
     int local_pct,
     int interval,
     int num_tables
@@ -227,8 +249,8 @@ void ycsb_test(
     uniform_int_distribution<int> op_dist(1, 100);
     uniform_int_distribution<int> locality_dist(1, 100);
     uniform_int_distribution<int> ht_dist(0, num_tables-1); // already passed in as num_tables/2 aka tables_per_node
-    uniform_int_distribution<int> key_dist(0, num_keys-1);
-
+    uniform_int_distribution<long long> key_dist(0, num_keys-1);
+    int successful_inserts = 0;
 	while (duration_cast<seconds>(steady_clock::now() - startTimer).count() < duration) {
 		//uint64_t key_id = gen->Next();
         uint64_t key_id = key_dist(rng);
@@ -249,7 +271,10 @@ void ycsb_test(
                     ht_node0_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct) {
                     ht_node0_locks[ht_choice]->lock();
-                    ht_node0[ht_choice]->insert(key.c_str());
+                    bool result = ht_node0[ht_choice]->insert(key.c_str());
+                    if (result) {
+                        successful_inserts++;
+                    }
                     ht_node0_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct + cfg->scan_pct) {
                     for (int j = 0; j < 10 && (key_id + j) < (uint64_t)num_keys; j++) {
@@ -277,7 +302,10 @@ void ycsb_test(
                     ht_node1_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct) {
                     ht_node1_locks[ht_choice]->lock();
-                    ht_node1[ht_choice]->insert(key.c_str());
+                    bool result = ht_node1[ht_choice]->insert(key.c_str());
+                    if (result) {
+                        successful_inserts++;
+                    }
                     ht_node1_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct + cfg->scan_pct) {
                     for (int j = 0; j < 10 && (key_id + j) < (uint64_t)num_keys; j++) {
@@ -309,7 +337,10 @@ void ycsb_test(
                     ht_node1_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct) {
                     ht_node1_locks[ht_choice]->lock();
-                    ht_node1[ht_choice]->insert(key.c_str());
+                    bool result = ht_node1[ht_choice]->insert(key.c_str());
+                    if (result) {
+                        successful_inserts++;
+                    }
                     ht_node1_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct + cfg->scan_pct) {
                     for (int j = 0; j < 10 && (key_id + j) < (uint64_t)num_keys; j++) {
@@ -337,7 +368,10 @@ void ycsb_test(
                     ht_node0_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct) {
                     ht_node0_locks[ht_choice]->lock();
-                    ht_node0[ht_choice]->insert(key.c_str());
+                    bool result = ht_node0[ht_choice]->insert(key.c_str());
+                    if (result) {
+                        successful_inserts++;
+                    }
                     ht_node0_locks[ht_choice]->unlock();
                 } else if (op_choice <= cfg->read_pct + cfg->update_pct + cfg->insert_pct + cfg->scan_pct) {
                     for (int j = 0; j < 10 && (key_id + j) < (uint64_t)num_keys; j++) {
@@ -362,8 +396,10 @@ void ycsb_test(
 		}
     }
 
-
+    
+     
 	globalLK->lock();
+    global_successful_inserts += successful_inserts;
 	if(numa_node==0)
 	{
 		for(int i=0; i<localOps.size(); i++){
@@ -380,5 +416,10 @@ void ycsb_test(
 
 	pthread_barrier_wait(&bar);
 
+    globalLK->lock();
+    if(thread_id == 0 && numa_node==0) {
+        std::cout<< "All successful inserts are " << global_successful_inserts << std::endl;  
+    }
+    globalLK->unlock();
 }
 

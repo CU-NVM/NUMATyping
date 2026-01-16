@@ -15,8 +15,8 @@ public:
     HashTable(int buckets);
     ~HashTable();
     int hash(const char* key);
-    void insert(const char* key);
-    void insert(const char* key, int count);
+    bool insert(const char* key);
+    bool insert(const char* key, int count);
     void remove(const char* key);
     int getCount(const char* key);
     bool updateCount(const char* key, int count);
@@ -55,28 +55,29 @@ int HashTable::hash(const char* key) {
     return hash % bucket_count;
 }
 
-void HashTable::insert(const char* word){
+bool HashTable::insert(const char* word){
     int idx = hash(word);
     HashNode* curr = table[idx];
     while(curr){
         if(strcmp(curr->key, word)==0){
             curr->count++;
-            return;
+            return false;
         }
         curr = curr->next;
     }
     HashNode* newNode = new HashNode(word);
     newNode->next = table[idx];
     table[idx] = newNode;
+    return true;
 }
 
-void HashTable::insert(const char* word, int count){
+bool HashTable::insert(const char* word, int count){
     int idx = hash(word);
     HashNode* curr = table[idx];
     while(curr){
         if(strcmp(curr->key, word)==0){
             curr->count += count;
-            return;
+            return false;
         }
         curr = curr->next;
     }
@@ -84,6 +85,7 @@ void HashTable::insert(const char* word, int count){
     newNode->count = count;
     newNode->next = table[idx];
     table[idx] = newNode;
+    return true;
 }
 
 void HashTable::remove(const char* word){
