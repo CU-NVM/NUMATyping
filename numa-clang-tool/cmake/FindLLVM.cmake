@@ -1,17 +1,4 @@
-# Detect LLVM and set various variable to link against the different component of LLVM
-#
-# NOTE: This is a modified version of the module originally found in the OpenGTL project
-# at www.opengtl.org
-#
-# LLVM_BIN_DIR : directory with LLVM binaries
-# LLVM_LIB_DIR : directory with LLVM library
-# LLVM_INCLUDE_DIR : directory with LLVM include
-#
-# LLVM_COMPILE_FLAGS : compile flags needed to build a program using LLVM headers
-# LLVM_LDFLAGS : ldflags needed to link
-# LLVM_LIBS_CORE : ldflags needed to link against a LLVM core library
-# LLVM_LIBS_JIT : ldflags needed to link against a LLVM JIT
-# LLVM_LIBS_JIT_OBJECTS : objects you need to add to your source when using LLVM JIT
+# numa-clang-tool/cmake/FindLLVM.cmake
 
 if (LLVM_INCLUDE_DIR)
   set(LLVM_FOUND TRUE)
@@ -22,39 +9,42 @@ if (NOT "${LLVM_CONFIG_EXECUTABLE}" STREQUAL "")
   set(CONFIG_NAME "${LLVM_CONFIG_EXECUTABLE}")
   unset(LLVM_CONFIG_EXECUTABLE CACHE)
 endif()
+
 find_program(LLVM_CONFIG_EXECUTABLE
   NAMES "${CONFIG_NAME}"
-  PATHS
-  /opt/local/bin
+  PATHS /opt/local/bin
 )
 
 MACRO(FIND_LLVM_LIBS LLVM_CONFIG_EXECUTABLE _libname_ LIB_VAR OBJECT_VAR)
-  exec_program( ${LLVM_CONFIG_EXECUTABLE} ARGS --libs ${_libname_}  OUTPUT_VARIABLE ${LIB_VAR} )
-  STRING(REGEX MATCHALL "[^ ]*[.]o[ $]"  ${OBJECT_VAR} ${${LIB_VAR}})
+  # Replacement 1: MACRO internal call
+  execute_process(
+    COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs ${_libname_}
+    OUTPUT_VARIABLE ${LIB_VAR}
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  STRING(REGEX MATCHALL "[^ ]*[.]o[ $]" ${OBJECT_VAR} ${${LIB_VAR}})
   SEPARATE_ARGUMENTS(${OBJECT_VAR})
-  STRING(REGEX REPLACE "[^ ]*[.]o[ $]" ""  ${LIB_VAR} ${${LIB_VAR}})
+  STRING(REGEX REPLACE "[^ ]*[.]o[ $]" "" ${LIB_VAR} ${${LIB_VAR}})
 ENDMACRO(FIND_LLVM_LIBS)
 
+# Replacement 2: Directory detection
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --bindir OUTPUT_VARIABLE LLVM_BIN_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --libdir OUTPUT_VARIABLE LLVM_LIB_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --includedir OUTPUT_VARIABLE LLVM_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-exec_program(${LLVM_CONFIG_EXECUTABLE} ARGS --bindir OUTPUT_VARIABLE LLVM_BIN_DIR )
-exec_program(${LLVM_CONFIG_EXECUTABLE} ARGS --libdir OUTPUT_VARIABLE LLVM_LIB_DIR )
-#MESSAGE(STATUS "LLVM lib dir: " ${LLVM_LIB_DIR})
-exec_program(${LLVM_CONFIG_EXECUTABLE} ARGS --includedir OUTPUT_VARIABLE LLVM_INCLUDE_DIR )
-
-
-exec_program(${LLVM_CONFIG_EXECUTABLE} ARGS --cxxflags  OUTPUT_VARIABLE LLVM_COMPILE_FLAGS )
+# Replacement 3: Compile Flags
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --cxxflags OUTPUT_VARIABLE LLVM_COMPILE_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
 MESSAGE(STATUS "LLVM CXX flags: " ${LLVM_COMPILE_FLAGS})
-execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --ldflags  OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-#--system-libs is new in llvm 3.5
-execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --system-libs  OUTPUT_VARIABLE LLVM_LDFLAGS2 OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+
+# (Already using execute_process for LDFLAGS)
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --system-libs OUTPUT_VARIABLE LLVM_LDFLAGS2 OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS} ${LLVM_LDFLAGS2}")
 MESSAGE(STATUS "LLVM LD flags: " ${LLVM_LDFLAGS})
-exec_program(${LLVM_CONFIG_EXECUTABLE} ARGS --libs      OUTPUT_VARIABLE LLVM_LIBS_CORE )
+
+# Replacement 4: Core Libs
+execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs OUTPUT_VARIABLE LLVM_LIBS_CORE OUTPUT_STRIP_TRAILING_WHITESPACE)
 MESSAGE(STATUS "LLVM core libs: " ${LLVM_LIBS_CORE})
-#FIND_LLVM_LIBS( ${LLVM_CONFIG_EXECUTABLE} "jit native" LLVM_LIBS_JIT LLVM_LIBS_JIT_OBJECTS )
-#STRING(REPLACE " -lLLVMCore -lLLVMSupport -lLLVMSystem" "" LLVM_LIBS_JIT ${LLVM_LIBS_JIT_RAW})
-#MESSAGE(STATUS "LLVM JIT libs: " ${LLVM_LIBS_JIT})
-#MESSAGE(STATUS "LLVM JIT objs: " ${LLVM_LIBS_JIT_OBJECTS})
 
 if(LLVM_INCLUDE_DIR)
   set(LLVM_FOUND TRUE)
