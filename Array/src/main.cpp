@@ -78,14 +78,22 @@ void spawn_threads(){
 		for(int i=0; i< num_threads/2; ++i)
 		{   int thread_id = i;
 			int numa_node = 0;
-			init_thread0[i] = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
+			if(thread_config == "reverse"){
+				init_thread0[i] = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, 1, num_arrays/2);
+			}else{
+				init_thread0[i] = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
+			}
 		}
 
 		for(int i=0; i< num_threads/2; ++i)
 		{   
 			int thread_id = i + num_threads/2;
 			int numa_node = 1;
-			init_thread1[i] = new thread_numa<NODE_ONE>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
+			if(thread_config == "reverse"){
+				init_thread1[i] = new thread_numa<NODE_ONE>(numa_array_init, thread_id , num_threads, DS_config, array_size, 0, num_arrays/2);
+			}else{
+				init_thread1[i] = new thread_numa<NODE_ONE>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
+			}
 		}
 
 	#else
@@ -119,7 +127,7 @@ void spawn_threads(){
 			regular_thread0[i] = new thread(array_test, tid, duration, DS_config, node, num_threads/2, array_size, num_arrays/2, interval);
 		}
 		else{
-			numa_thread0[i] = new thread_numa<NODE_ZERO>(array_test, tid, duration, DS_config, 1, num_threads/2, array_size, num_arrays/2, interval);
+			numa_thread0[i] = new thread_numa<NODE_ZERO>(array_test, tid, duration, DS_config, 0, num_threads/2, array_size, num_arrays/2, interval);
 		}
 	}
 
@@ -133,7 +141,7 @@ void spawn_threads(){
 			regular_thread1[i] = new thread(array_test, tid, duration, DS_config, node, num_threads/2, array_size, num_arrays/2, interval);
 		}
 		else{
-			numa_thread1[i] = new thread_numa<NODE_ONE>(array_test, tid, duration, DS_config, 0, num_threads/2, array_size, num_arrays/2, interval);
+			numa_thread1[i] = new thread_numa<NODE_ONE>(array_test, tid, duration, DS_config, 1, num_threads/2, array_size, num_arrays/2, interval);
 		}
 	}
 

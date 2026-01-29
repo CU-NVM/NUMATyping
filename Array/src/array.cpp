@@ -78,7 +78,7 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
     pthread_barrier_wait(&init_bar);
 
     // ------------------ GLOBAL ALLOCATION (ONCE) ------------------
-    if (thread_id == 0) {
+    if(node == 0 && thread_id % threads_per_node == 0) {
         for (int i = 0; i < num_arrays; i++) {
             if (DS_config != "regular") {
                 array_node0[i] = reinterpret_cast<char**> (new numa<char*, NODE_ZERO>[array_size]);
@@ -88,7 +88,7 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
             }
         }
     }
-    if(thread_id == threads_per_node  && node == 1) {
+   else if (node == 1 && thread_id % threads_per_node == 0) {
         for (int i = 0; i < num_arrays; i++) {
             if (DS_config != "regular") {
                 array_node1[i] = reinterpret_cast<char**> (new numa<char*, NODE_ONE>[array_size]);
@@ -155,6 +155,7 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
     }
 
 }
+
 
 void array_test(int tid, int duration, std::string DS_config, int node, int num_threads,  int64_t array_size, int num_arrays, int interval)
 {

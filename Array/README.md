@@ -9,3 +9,8 @@
 ```shell
     python3 meta.py  numactl --cpunodebind=0,1 --membind=0,1 ./bin/array --meta th_config:numa:regular --meta DS_config:numa:regular --meta t:40 --meta n:1000 --meta u:120 --meta s:100000 --meta i:10
 ```
+
+## Debugging 
+```shell
+sudo watch -n 1 numastat -p [pid]
+```

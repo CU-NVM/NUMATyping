@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(clang-tool)
-
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 
 # Allow user to specify clang version manually (e.g., -DCLANG_VER=21)
