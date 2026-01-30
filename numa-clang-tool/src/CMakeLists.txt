@@ -33,7 +33,7 @@ find_shared_lib_dynamic(CLANG_CPP_SHARED_LIB "${LLVM_LIB_DIR}" "libclang-cpp*.so
 # --- 2. Include Configuration ---
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 include_directories(SYSTEM ${CLANG_INCLUDE_DIRS})
-include_directories(SYSTEM ${CLANG_BUILTIN_INCLUDE_DIR})
+#include_directories(SYSTEM ${CLANG_BUILTIN_INCLUDE_DIR})
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g3 -O3 -fno-rtti -fno-exceptions -funwind-tables -pthread")
 
