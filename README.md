@@ -1,111 +1,77 @@
 # NUMA TYPING 
-* **Adjust HOME_DIR variable to your appropriate home directory in ```Exprs/Examples/Makefile```**
-* **Adjust the clang version in ```numa-clang-tool/run.sh``` (Currently version 21)**
-
-
-
 A compiler tool project for recursivley typing NUMA annotated objects for increased local accesses. This repository contains a data structure benchmark which has numa data structures and numa threads that access these data structures. The benchmark reports thread throughput of different configurations of these data structures.
 
 
-## How to compile
-
-```bash
-cd numa-clang-tool
-
-mkdir build 
-
-cd build 
-
-cmake ..
-
-cmake --build .
-
-cd ../../
-```
-
-This compiles the clang tool that is used to compile a source code.
-
-```bash
-cd unified-memory-framework
-
-mkdir build
-
-cd build 
-
-sudo cmake ..
-
-sudo cmake --build .
-
-cd ../../
-```
-This compiles the custom numa allocator 
-
 ## How to run
+1. If you are on the NERSC machines, navigate to the `$SCRATCH` directory. Make sure you have cloned this repo in `$SCRATCH`. If not, stay in `$HOME`
 
-1. **To run on a machine with two numa nodes,**
+2. If you are not on NERSC machines, skip this step. If you are on the NERSC machines, you will start by loading the python module.Then run these two scripts in order. The first loads necessary modules, and the later adjusts environment variables.
+    ```shell
+        module load python
+        eval $(python3 load.py)
+        eval $(python3 env.py)
+    ```
 
-```sudo python3 runExperiments.py Exprs --DS=bst --UMF```
+3. Navigate to the tool and compile it. 
+    ```shell 
+        cd numa-clang-tool
+        mkdir build
+        cd build 
+        cmake ..
+        cmake --build .
+    ```
+    NOTE: If for some reason compilation gives you trouble, pass the `-DHELP=ON` command when you run. There are multiple ways to specify common library paths
+          If for some reason you have to find dependencies in your system, use `find`. Example usage `$ find /usr -name libLLVM*.so`
+3. Navigate to the custom memory allocator and compile it.
+    ```shell
+        cd unified-memory-framework
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build .
+    ```
 
-- runExperiments.py : python script to run desired data structures.
-- Exprs: benchmark name in the main directory.
-- DS=bst : type of data structure to run.
-- UMF : type of numa allocator to use
-- verbose (optional) : output result on command line
+## NUMAFYING
 
-This command copies the Exprs benchmark into the ```numa-clang-tool``` folder, compiles it using the script under ```numa-clang-tool```(see readme under ```numa-clang-tool```), copies the numa-fied data structure back under the ```Output``` directory, compiles it using the make file and runs the experiment (see readme under ```Exprs```) finally writing the result in ```Result/BST_Transactions.csv``` directory.
+```shell
+    python3 numafy.py --ROOT_DIR=[PATH] [SUITE] [OPTIONS]
+```
+* ROOT_DIR will default to `$HOME/NUMATyping` if not specified.
+* SUITE is the benchmarks name i.e. ycsb, Histogram, DataStructures etc
+* To see other options and help message run with `--help`
 
+## RUNNING BENCHMARKS
 
-2. **To run on a machine with more than two numa nodes (stormbreaker server),**
-
-*to-do: make this part of the runExperiments.py script
-
-```bash
-./numafy [BENCHMARK] [CLANG-VERSION]
-
-cd Output/[BENCHMARK]
-
-make UMF=1 
-
-numactl --cpunodebind=0,1 --membind=0,1 python3 meta.py ./Examples/bin/DSExample --meta n:1000000 --meta t:40:80 --meta D:800 --meta DS_name:bst --meta th_config:numa:regular:reverse --meta DS_config:numa:regular --meta k:160  --meta i:10 >> ../../Result/BST_Transactions.csv
+The are multiple ways to run the different benchmarks.
+### YCSB
+* Running native: 
+```shell 
+    cd ycsb
+    make clean
+    make ROOT_DIR=[PATH] UMF=1
+    numactl --cpunodebind=0,1 --membind=0,1 ./bin/ycsb --th_config=numa --DS_config=numa -t 40 -b 1333 --w=D -u 120 -k 10000000 --l=80-20 -i 10 -a 1000
 ```
 
-
-This command copies the Exprs benchmark into the ```numa-clang-tool``` folder, compiles it using the script under ```numa-clang-tool```(see readme under ```numa-clang-tool```), copies the numa-fied data structure back under the ```Output``` directory, compiles it using the make file and runs the experiment (see readme under ```Exprs```) finally writing the result in ```Result/BST_Transactions.csv``` directory.
-
-
-
-The first three arguments of the last command bind the process to be run on just two nodes since the Exprs benchmark only pins threads and data structures on two nodes. The meta script is part of the benchmark and is used to run different combinations of options for the benchmark (see readme under ```Exprs```). 
-    
-
-3. **To run a single configuration of all options (no cross product of options)**
-
-```bash
-cp -rf Exprs numa-clang-tool/input
-
-cd numa-clang-tool
-
-sudo ./run.sh Exprs
-
-cp -rf output2/Exprs ../Output
-
-cd ../Output/Exprs
-
-sudo make UMF=1 
-
-./Examples/bin/DSExample -n 10240 -t 40 -D 20 --DS_name=bst --th_config=numa --DS_config=numa -k 160 -i 10
+* Running numafied version (Make sure to run it after NUMAFYING: [Jump to Subtitle](#NUMAFYING)
+```shell
+    cd Output/ycsb
+    make clean
+    make ROOT_DIR=[PATH] UMF=1
+    numactl --cpunodebind=0,1 --membind=0,1 ./bin/ycsb --th_config=numa --DS_config=numa -t 40 -b 1333 --w=D -u 120 -k 10000000 --l=80-20 -i 10 -a 1000
 ```
+ 
+ NOTE: There is also a way to run with multiple configurations at once using the meta.py script. 
+    Example usage:
+    ```shell
+        numactl --cpunodebind=0,1 --membind=0,1 ./bin/ycsb --meta th_config:numa:regular --meta DS_config:numa:regular \
+        --meta t:80 --meta b:1333 --meta w:D --meta u:30 --meta k:15000000 --meta l:80-20 --meta i:20 --meta a:1000
+    ```
+    More help can be found running meta.py with `--help`
 
-### Result 
-The result is a csv file with different fields. 
+* Running numafied version with csv files and graphs
+```shell
+    python3 runYCSB.py --ROOT_DIR=[PATH] --UMF --numafy [OPTIONS]
+```
+    **`--numafy` is optional and is only there if you want to numafy the native code before you begin. For more opitons, run with --help.
 
-- DS_name: type of data structure run
-- num_DS: numbers of data structures created
-- num_threads: numbers of threads run 
-- duration: time(sec) at which the corresponding throughput is recorded (time would be a better label)
-- thread_config and DS_config : see paper (Section 6.3)
-- keyspace: keyspace for binary search tree data structure
-- interval: the interval between two successive duration values 
-- Op0, Op1 and TotalOps: througput of threads on node 0, node 1 and total throughput.
-
-(see readme in ```Result``` to understand more types of results on number of accesses etc.)
-
+### DATASTRUCTURES

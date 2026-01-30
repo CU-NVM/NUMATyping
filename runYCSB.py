@@ -24,7 +24,7 @@ CORE OPTIONS:
     --UMF                  Enable Unified Memory Framework support.
     --AN [0|1]             Set AutoNUMA (Default: 1).
     -d, --output PATH      Output directory (Default: ROOT_DIR/Result).
-    --graph                Generate plots after the run finishes.
+    --graph                Generate plots after the run finishes. (TODO: May not work properly)
 
 WORKFLOW EXAMPLE:
     python3 runYCSB.py --ROOT_DIR=$SCRATCH/NUMATyping --numafy --UMF
@@ -91,8 +91,8 @@ def run_experiment(output_csv: Path, experiment_folder: str) -> None:
     cmd = (f'cd {experiment_folder} && python3 meta.py '
            f'numactl --cpunodebind=0,1 --membind=0,1 ./bin/ycsb '
            f'--meta th_config:numa:regular --meta DS_config:numa:regular '
-           f'--meta t:80 --meta b:1333 --meta w:D --meta u:30 '
-           f'--meta k:15000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
+           f'--meta t:80 --meta b:13330000 --meta w:D --meta u:800 '
+           f'--meta k:150000000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
     subprocess.run(cmd, shell=True, check=True)
 
 # ============================================================================
