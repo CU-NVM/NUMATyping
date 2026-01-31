@@ -1,45 +1,63 @@
-CC=clang++
-HOME_DIR := $(shell echo $$HOME)
-LINK_FLAGS=-lnuma -std=c++20 -pthread 
+# Compiler and basic settings
+CC         := clang++
+CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1
+LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
 
-INC_DIRS= -Iinclude/  -I$(HOME_DIR)/NUMATyping/numaLib
-UMF_INC_DIRS= 
+# ROOT_DIR: Use provided value, otherwise default to $HOME/NUMATyping
+ROOT_DIR   ?= $(HOME)/NUMATyping
 
+# Include directories
+INC_DIRS := -Iinclude/  -I$(ROOT_DIR)/numaLib
+UMF_INC_DIRS :=
 
-EXE=./bin/DataStructureTest
-OBJS=main.o TestSuite.o
+# Executable and object files
+EXE  := ./bin/datastructures
+OBJS := src/main.o src/TestSuite.o 
 
-UMF =
-FLAGS = -fno-omit-frame-pointer
-ifndef DEBUG
-#  FLAGS += -DEBUG
-else
-	FLAGS += -DDEBUG
-endif
-
+# Unified Memory Framework (optional)
+# Usage: make UMF=1 JEMALLOC_ROOT=/path/to/jemalloc
 ifeq ($(UMF), 1)
-    LINK_FLAGS += -lhwloc -lnuma -lrt -ldl -ljemalloc  $(HOME_DIR)/NUMATyping/unified-memory-framework/build/lib/libumf.a $(HOME_DIR)/NUMATyping/unified-memory-framework/build/lib/libjemalloc_pool.a
-	
-    UMF_INC_DIRS+= -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/utils -I$(HOME_DIR)/NUMATyping/unified-memory-framework/include -I$(HOME_DIR)/NUMATyping/unified-memory-framework/examples/common -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/ravl -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/critnib -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/provider -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/memspaces -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/memtargets -DUMF
+    LINK_FLAGS += -lhwloc -lnuma -lrt -ldl -ljemalloc \
+        $(ROOT_DIR)/unified-memory-framework/build/lib/libumf.a \
+        $(ROOT_DIR)/unified-memory-framework/build/lib/libjemalloc_pool.a \
+        -DUMF
+
+    UMF_INC_DIRS += -I$(ROOT_DIR)/unified-memory-framework/src/utils \
+        -I$(ROOT_DIR)/unified-memory-framework/include \
+        -I$(ROOT_DIR)/unified-memory-framework/examples/common \
+        -I$(ROOT_DIR)/unified-memory-framework/src \
+        -I$(ROOT_DIR)/unified-memory-framework/src/ravl \
+        -I$(ROOT_DIR)/unified-memory-framework/src/critnib \
+        -I$(ROOT_DIR)/unified-memory-framework/src/provider \
+        -I$(ROOT_DIR)/unified-memory-framework/src/memspaces \
+        -I$(ROOT_DIR)/unified-memory-framework/src/memtargets \
+        -DUMF \
+		-DPIN_INIT
+
+    # Only add Jemalloc-specific flags if JEMALLOC_ROOT is defined
+    ifdef JEMALLOC_ROOT
+        UMF_INC_DIRS += -I$(JEMALLOC_ROOT)/include
+        LINK_FLAGS   += -L$(JEMALLOC_ROOT)/lib -Wl,-rpath,$(JEMALLOC_ROOT)/lib
+    endif
 endif
 
-# $(EXE): $(OBJS)
-# 	$(CC) $(OBJS) -o $(EXE) 
-# -DPIN_INIT=1 
-all: $(EXE) $(TESTEXE)
+# Enable DEBUG if defined
+ifdef DEBUG
+    CXXFLAGS += -DDEBUG
+endif
 
-$(TESTEXE): $(TESTOBJS)
-	$(CC) $(TESTOBJS) $(INC_DIRS) $(LINK_FLAGS) -o $(TESTEXE)
+# Default target
+all: $(EXE)
 
+# Linking
 $(EXE): $(OBJS)
-	$(CC) $(OBJS) $(LINK_FLAGS) -o $(EXE) 
+	@mkdir -p bin
+	$(CC) $(OBJS) $(LINK_FLAGS) -o $(EXE)
 
-main.o: 
-	$(CC) -c -O3 -g -std=c++20  -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS) -D_NODE_HPP=1 -DPIN_INIT=1  src/main.cpp 
-	
+# Generic rule for compiling .cpp to .o
+%.o: %.cpp
+	$(CC) -c $(CXXFLAGS) $(INC_DIRS) $(UMF_INC_DIRS) $< -o $@
 
-TestSuite.o: src/TestSuite.cpp
-	$(CC) -c  -O3 -g -std=c++20  -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)  src/TestSuite.cpp
-
+# Clean build artifacts
 clean:
-	rm *.o $(EXE)
+	rm -f $(OBJS) $(EXE)

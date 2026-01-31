@@ -1,174 +1,162 @@
-#!/usr/bin/python
-
-import shutil
+#!/usr/bin/env python3
 import subprocess
-import sys
 import argparse
-from pathlib import Path
 import os
-#threads we want to run for = t:4:8:12:16:20:24:28:32:36:40
+import sys
+from pathlib import Path
 
-experiment_folder = "./Output/DataStructureTests/"
+# ============================================================================
+# Help Function
+# ============================================================================
 
+def show_help():
+    help_text = """
+Data Structure Experiment Runner
+--------------------------------
+Automates the lifecycle of NUMA-aware Data Structure tests.
+
+USAGE:
+    python3 runExperiments.py --DS [name] [OPTIONS]
+
+CORE OPTIONS:
+    --DS NAME               Specify the data structure name (Required).
+    --ROOT_DIR PATH         Path to NUMATyping root (Default: ~/NUMATyping).
+    --numafy                Trigger the 'numafy.py' transformation pass. 
+    --UMF                   Enable Unified Memory Framework support.
+    --AN [0|1]              Set AutoNUMA (Default: 1).
+    -d, --output PATH       Output directory (Default: ROOT_DIR/Result).
+    --graph                 Generate plots after the run finishes.
+    --jemalloc-root PATH    Manual path to jemalloc (Default: auto-detect via spack).
+
+WORKFLOW EXAMPLE:
+    python3 runExperiments.py --DS stack --numafy --UMF
+"""
+    print(help_text)
+    sys.exit(0)
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def get_spack_path(package):
+    cmd = "source /etc/profile.d/modules.sh && module load spack && spack location -i " + package
+    try:
+        return subprocess.check_output(cmd, shell=True, executable='/bin/bash', 
+                                       universal_newlines=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        return None
 
 def ensure_dir(path: str) -> str:
-    """Ensure path is a directory; create it if missing; return absolute path."""
     os.makedirs(path, exist_ok=True)
     return os.path.abspath(path)
 
-
-
 def set_autonuma(desired: int) -> None:
-    """
-    Set AutoNUMA globally to 0 or 1.
-    Tries direct /proc write, then falls back to 'sudo sysctl -w'.
-    Verifies and raises on failure.
-    """
-    
     try:
         with open("/proc/sys/kernel/numa_balancing", "r") as f:
-            cur =int(f.read().strip())
+            cur = int(f.read().strip())
     except FileNotFoundError:
-        raise RuntimeError("This kernel doesn't expose /proc/sys/kernel/numa_balancing (no AutoNUMA support?)")
-
-    if desired not in (0, 1):
-        raise ValueError("AutoNUMA value must be 0 or 1")
-
-    if cur == desired:
-        print(f"AutoNUMA already {cur} (no change).")
         return
 
-    # 1) Try direct write (works if running as root)
+    if cur == desired: return
+
     try:
         with open("/proc/sys/kernel/numa_balancing", "w") as f:
             f.write(str(desired))
     except PermissionError:
-        # 2) Fall back to sudo sysctl
-        cmd = ["sudo", "sysctl", f"kernel.numa_balancing={desired}"]
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        if r.returncode != 0:
-            msg = r.stdout.strip()
-            raise RuntimeError(f"Failed to set AutoNUMA via sysctl (exit {r.returncode}). Output:\n{msg}")
+        subprocess.run(["sudo", "sysctl", f"kernel.numa_balancing={desired}"], check=False)
 
-    # Verify
-    try:
-        with open("/proc/sys/kernel/numa_balancing", "r") as f:
-            new_val =int(f.read().strip())
-    except FileNotFoundError:
-        raise RuntimeError("This kernel doesn't expose /proc/sys/kernel/numa_balancing (no AutoNUMA support?)")
-    if new_val != desired:
-        raise RuntimeError(f"Tried to set AutoNUMA to {desired}, but kernel reports {new_val}.")
-    print(f"AutoNUMA set to {new_val} successfully.")
+# ============================================================================
+# Execution Pipeline
+# ============================================================================
 
-
-
-def compile_experiment(UMF: bool) -> None:
-    # Clean previous builds
-    subprocess.run(f"cd {experiment_folder} && make clean", shell=True, check=False)
-
-    # Compile with or without UMF
-    if UMF:
-        subprocess.run(f"cd {experiment_folder} && make UMF=1", shell=True, check=False)
-    else:
-        subprocess.run(f"cd {experiment_folder} && make", shell=True, check=False)
-
+def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
+    if do_numafy:
+        numafy_script = os.path.join(root_dir, "numafy.py")
+        numafy_cmd = ["python3", numafy_script, f"--ROOT_DIR={root_dir}", "DataStructureTests", f"--umf={1 if UMF else 0}"]
+        if jemalloc_root:
+            numafy_cmd.append(f"--jemalloc-root={jemalloc_root}")
         
-def run_command(command):
-    # Start the command with stdout and stderr redirected to subprocess.PIPE
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
+        print(f"\n--- Running Transformation ---")
+        subprocess.run(numafy_cmd, check=True)
 
-    # Read and print each line from stdout as it becomes available
-    while True:
-        output = process.stdout.readline()
-        if output == "" and process.poll() is not None:
-            break
-        if output:
-            print(output.strip())  # Print output line by line
+    print(f"\n--- Compiling in {experiment_folder} ---")
+    subprocess.run(f"make -C {experiment_folder} clean", shell=True, check=False)
+    
+    make_vars = f"ROOT_DIR={root_dir}"
+    if jemalloc_root: make_vars += f" JEMALLOC_ROOT={jemalloc_root}"
+    if UMF: make_vars += " UMF=1"
+    
+    subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
-    # Wait for the process to complete
-    process.wait()
-
-def run_experiment(output_file_path, DS_name):
-    """
-    Run the experiment inside experiment_folder.
-    If successful, append output to CSV file.
-    If failed, dump all output to terminal.
-    """
+def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str) -> None:
+    # Constructing the command using the specific logic for DataStructureTest
     cmd = (
-        "python3 meta.py "
-        "numactl --cpunodebind=0,1 --membind=0,1 "
-        "./bin/DataStructureTest "
-        "--meta n:10240 "
-        "--meta t:40:80 "
-        "--meta D:800 "
-        f"--meta DS_name:{DS_name} "
-        "--meta th_config:numa:regular:reverse "
-        "--meta DS_config:numa:regular "
-        "--meta k:160 "
-        "--meta i:10"
+        f'cd {experiment_folder} && python3 meta.py '
+        'numactl --cpunodebind=0,1 --membind=0,1 '
+        './bin/datastructures '
+        '--meta n:10000 '
+        '--meta t:128:256 '
+        '--meta D:20 '
+        f'--meta DS_name:{DS_name} '
+        '--meta th_config:numa:regular:reverse '
+        '--meta DS_config:numa:regular '
+        '--meta k:160 '
+        '--meta i:10 '
+        f'>> "{output_csv}"'
     )
+    print(f"--- Running Experiment ---\n{cmd}\n")
+    subprocess.run(cmd, shell=True, check=True)
 
-    print(f"Running experiment in {experiment_folder}\n{cmd}\n")
-
-    # Run and capture both stdout and stderr
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        cwd=os.path.abspath(experiment_folder),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True
-    )
-
-    if result.returncode == 0:
-        # Success — append output to CSV file
-        with open(output_file_path, "a") as out:
-            out.write(result.stdout)
-        print(f"Experiment completed successfully. Output appended to {output_file_path}\n")
-    else:
-        print("\nExperiment failed!")
-        print(f"Exit code: {result.returncode}")
-        print(f"Command: {cmd}")
-        print(result.stdout)
-        # Optionally re-raise or exit non-zero
-        raise subprocess.CalledProcessError(result.returncode, cmd)
-def write_header_once(output_file_path: Path) -> None:
-    """Write header only if file doesn't exist or is empty."""
-    header = (
-        "Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration,keyspace, interval, Op0, Op1, TotalOps\n"
-    )
-    if not output_file_path.exists() or output_file_path.stat().st_size == 0:
-        # Ensure parent dir exists
-        output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_file_path.open("w") as f:
-            f.write(header)
+# ============================================================================
+# Main
+# ============================================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Copy folder and run a command with an additional argument.")
-    parser.add_argument('--DS', type=str, required=True, help="Specify the data structure name")
-    parser.add_argument('--UMF', action='store_true', help="Enable verbose mode")
-    parser.add_argument("-d", "--output", type=ensure_dir, required=True, help="Output directory")
-    parser.add_argument('--graph', action='store_true', help="Generate graphs after experiment")
-    parser.add_argument('--AN', type=int, choices=[0, 1], default=1, help="Set autonuma flag (0 or 1)")
-    parser.add_argument('--verbose', action='store_true', help="Enable verbose mode")
+    if "--help" in sys.argv or "-h" in sys.argv:
+        show_help()
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--DS', type=str, required=True)
+    parser.add_argument('--ROOT_DIR', default=os.path.expanduser("~/NUMATyping"))
+    parser.add_argument('--numafy', action='store_true')
+    parser.add_argument('--UMF', action='store_true')
+    parser.add_argument("-d", "--output")
+    parser.add_argument('--AN', type=int, choices=[0, 1], default=1)
+    parser.add_argument('--graph', action='store_true')
+    parser.add_argument('--jemalloc-root')
+
+    try:
+        args = parser.parse_args()
+    except:
+        show_help()
+
+    ROOT_DIR = os.path.abspath(args.ROOT_DIR)
+    if not os.path.exists(ROOT_DIR):
+        print(f"Error: ROOT_DIR {ROOT_DIR} does not exist.")
+        sys.exit(1)
+
+    EXPERIMENT_FOLDER = os.path.join(ROOT_DIR, "Output/DataStructureTests")
+    OUT_BASE = Path(ensure_dir(args.output)) if args.output else Path(ensure_dir(os.path.join(ROOT_DIR, "Result")))
     
-    args = parser.parse_args()
-    set_autonuma(args.AN)
-    output_dir = Path(args.output)
-    output_file_path = ""
-    if (args.AN == 1):
-        output_file_path = output_dir / "AN_on" / f"{args.DS}_Transactions.csv"
-    elif (args.AN == 0):
-        output_file_path = output_dir / "AN_off" / f"{args.DS}_Transactions.csv"
-
-
-    write_header_once(output_file_path)
-    compile_experiment(args.UMF)
-
-    run_experiment(output_file_path, args.DS)
-
-
-    # run_command_and_redirect_output(command, f"./Result/stack.csv")
+    JEMALLOC_ROOT = args.jemalloc_root or get_spack_path("jemalloc")
     
+    #set_autonuma(args.AN)
     
+    an_folder = "AN_on" if args.AN == 1 else "AN_off"
+    output_file_path = OUT_BASE / an_folder / f"{args.DS}_Transactions.csv"
     
+    # Ensure header
+    if not output_file_path.exists() or output_file_path.stat().st_size == 0:
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_file_path.open("w") as f:
+            f.write("Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n")
+
+    compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
+    run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER, args.DS)
+
+    if args.graph:
+        plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
+        # Note: adjust plot script path or arguments as needed for DS experiments
+        subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
+
+    print(f"\nCOMPLETE. Results: {output_file_path}")

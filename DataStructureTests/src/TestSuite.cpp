@@ -156,7 +156,6 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 	crossover = -1;
 	//std::cout<<"crossover value from here is "<<crossover<<std::endl;
 	if(node==0 ){
-	
 		BSTs0.resize(num_DS);
 		BSTs1.resize(num_DS);
 		BST_lk0.resize(BSTs0.size());
@@ -168,7 +167,6 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 	std::mt19937 gen(123);
 	std::uniform_int_distribution<> xDist(1, 100);
 	std::uniform_int_distribution<> dist(0, keyspace);
-	
 	if(node == 0){
 		for(int i = 0; i < num_DS; i++)
 		{
