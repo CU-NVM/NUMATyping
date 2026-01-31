@@ -24,10 +24,10 @@ using namespace std;
 
 #ifdef NUMA_MACHINE
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #else
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #endif
 
 std::string thread_config;

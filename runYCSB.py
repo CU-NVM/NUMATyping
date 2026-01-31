@@ -89,10 +89,10 @@ def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root:
 
 def run_experiment(output_csv: Path, experiment_folder: str) -> None:
     cmd = (f'cd {experiment_folder} && python3 meta.py '
-           f'numactl --cpunodebind=0,1 --membind=0,1 ./bin/ycsb '
+           f'numactl --cpunodebind=0,7 --membind=0,7 ./bin/ycsb '
            f'--meta th_config:numa:regular --meta DS_config:numa:regular '
-           f'--meta t:80 --meta b:13330000 --meta w:D --meta u:800 '
-           f'--meta k:150000000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
+           f'--meta t:80 --meta b:1333 --meta w:D --meta u:20 '
+           f'--meta k:15000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
     subprocess.run(cmd, shell=True, check=True)
 
 # ============================================================================

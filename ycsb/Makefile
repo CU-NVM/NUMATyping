@@ -60,3 +60,4 @@ $(EXE): $(OBJS)
 # Clean build artifacts
 clean:
 	rm -f $(OBJS) $(EXE)
+

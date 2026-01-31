@@ -92,15 +92,15 @@ def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str) -> No
     # Constructing the command using the specific logic for DataStructureTest
     cmd = (
         f'cd {experiment_folder} && python3 meta.py '
-        'numactl --cpunodebind=0,1 --membind=0,1 '
+        'numactl --cpunodebind=0,7 --membind=0,7 '
         './bin/datastructures '
-        '--meta n:10000 '
+        '--meta n:30000000 '
         '--meta t:128:256 '
-        '--meta D:20 '
+        '--meta D:300 '
         f'--meta DS_name:{DS_name} '
         '--meta th_config:numa:regular:reverse '
         '--meta DS_config:numa:regular '
-        '--meta k:160 '
+        '--meta k:1600 '
         '--meta i:10 '
         f'>> "{output_csv}"'
     )
@@ -151,12 +151,23 @@ if __name__ == "__main__":
         with output_file_path.open("w") as f:
             f.write("Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n")
 
-    compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
-    run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER, args.DS)
+    # Wrap execution in try/except to catch runtime errors
+    try:
+        compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
+        run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER, args.DS)
 
-    if args.graph:
-        plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
-        # Note: adjust plot script path or arguments as needed for DS experiments
-        subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
+        if args.graph:
+            plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
+            # Note: adjust plot script path or arguments as needed for DS experiments
+            subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True, check=True)
 
-    print(f"\nCOMPLETE. Results: {output_file_path}")
+        print(f"\nCOMPLETE. Results: {output_file_path}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")
+        # Ensure we exit with error status so calling scripts know it failed
+        sys.exit(e.returncode)
+    except Exception as e:
+        print(f"\n[FATAL ERROR] An unexpected runtime error occurred: {e}")
+        sys.exit(1)
+
