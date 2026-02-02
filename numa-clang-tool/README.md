@@ -11,6 +11,7 @@ cd build
 cmake .. -DCLANG_VER=21
 cmake --build .
 ```
+If having issues with running cmake do `cmake -DHELP=ON ..`
 
 ## Usage
 

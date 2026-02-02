@@ -11,25 +11,23 @@ from pathlib import Path
 
 def show_help():
     help_text = """
-Data Structure Experiment Runner
---------------------------------
-Automates the lifecycle of NUMA-aware Data Structure tests.
+YCSB NUMA Experiment Runner
+---------------------------
+Automates the lifecycle of a NUMA-aware YCSB experiment.
 
 USAGE:
-    python3 runExperiments.py --DS [name] [OPTIONS]
+    python3 runYCSB.py [OPTIONS]
 
 CORE OPTIONS:
-    --DS NAME               Specify the data structure name (Required).
-    --ROOT_DIR PATH         Path to NUMATyping root (Default: ~/NUMATyping).
-    --numafy                Trigger the 'numafy.py' transformation pass. 
-    --UMF                   Enable Unified Memory Framework support.
-    --AN [0|1]              Set AutoNUMA (Default: 1).
-    -d, --output PATH       Output directory (Default: ROOT_DIR/Result).
-    --graph                 Generate plots after the run finishes.
-    --jemalloc-root PATH    Manual path to jemalloc (Default: auto-detect via spack).
+    --ROOT_DIR PATH        Path to NUMATyping root (Default: ~/NUMATyping).
+    --numafy               Trigger the 'numafy.py' transformation pass. 
+    --UMF                  Enable Unified Memory Framework support.
+    --AN [0|1]             Set AutoNUMA (Default: 1).
+    -d, --output PATH      Output directory (Default: ROOT_DIR/Result).
+    --graph                Generate plots after the run finishes. (TODO: May not work properly)
 
 WORKFLOW EXAMPLE:
-    python3 runExperiments.py --DS stack --numafy --UMF
+    python3 runYCSB.py --ROOT_DIR=$SCRATCH/NUMATyping --numafy --UMF
 """
     print(help_text)
     sys.exit(0)
@@ -63,6 +61,7 @@ def set_autonuma(desired: int) -> None:
         with open("/proc/sys/kernel/numa_balancing", "w") as f:
             f.write(str(desired))
     except PermissionError:
+        # Fallback to sysctl if direct write fails
         subprocess.run(["sudo", "sysctl", f"kernel.numa_balancing={desired}"], check=False)
 
 # ============================================================================
@@ -72,7 +71,7 @@ def set_autonuma(desired: int) -> None:
 def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
     if do_numafy:
         numafy_script = os.path.join(root_dir, "numafy.py")
-        numafy_cmd = ["python3", numafy_script, f"--ROOT_DIR={root_dir}", "DataStructureTests", f"--umf={1 if UMF else 0}"]
+        numafy_cmd = ["python3", numafy_script, f"--ROOT_DIR={root_dir}", "ycsb", f"--umf={1 if UMF else 0}"]
         if jemalloc_root:
             numafy_cmd.append(f"--jemalloc-root={jemalloc_root}")
         
@@ -88,23 +87,12 @@ def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root:
     
     subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
-def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str) -> None:
-    # Constructing the command using the specific logic for DataStructureTest
-    cmd = (
-        f'cd {experiment_folder} && python3 meta.py '
-        'numactl --cpunodebind=0,7 --membind=0,7 '
-        './bin/datastructures '
-        '--meta n:30000000 '
-        '--meta t:128:256 '
-        '--meta D:300 '
-        f'--meta DS_name:{DS_name} '
-        '--meta th_config:numa:regular:reverse '
-        '--meta DS_config:numa:regular '
-        '--meta k:1600 '
-        '--meta i:10 '
-        f'>> "{output_csv}"'
-    )
-    print(f"--- Running Experiment ---\n{cmd}\n")
+def run_experiment(output_csv: Path, experiment_folder: str) -> None:
+    cmd = (f'cd {experiment_folder} && python3 meta.py '
+           f'numactl --cpunodebind=0,7 --membind=0,7 ./bin/ycsb '
+           f'--meta th_config:numa:regular --meta DS_config:numa:regular '
+           f'--meta t:80 --meta b:1333 --meta w:D --meta u:20 '
+           f'--meta k:15000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
     subprocess.run(cmd, shell=True, check=True)
 
 # ============================================================================
@@ -116,7 +104,6 @@ if __name__ == "__main__":
         show_help()
 
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--DS', type=str, required=True)
     parser.add_argument('--ROOT_DIR', default=os.path.expanduser("~/NUMATyping"))
     parser.add_argument('--numafy', action='store_true')
     parser.add_argument('--UMF', action='store_true')
@@ -130,44 +117,35 @@ if __name__ == "__main__":
     except:
         show_help()
 
+    # Fixed: Define variable inside scope
+    OUTPUT_FILENAME = "ycsb_experiments.csv"
     ROOT_DIR = os.path.abspath(args.ROOT_DIR)
+    
     if not os.path.exists(ROOT_DIR):
         print(f"Error: ROOT_DIR {ROOT_DIR} does not exist.")
         sys.exit(1)
 
-    EXPERIMENT_FOLDER = os.path.join(ROOT_DIR, "Output/DataStructureTests")
+    EXPERIMENT_FOLDER = os.path.join(ROOT_DIR, "Output/ycsb")
     OUT_BASE = Path(ensure_dir(args.output)) if args.output else Path(ensure_dir(os.path.join(ROOT_DIR, "Result")))
     
     JEMALLOC_ROOT = args.jemalloc_root or get_spack_path("jemalloc")
     
-    #set_autonuma(args.AN)
+    set_autonuma(args.AN)
     
     an_folder = "AN_on" if args.AN == 1 else "AN_off"
-    output_file_path = OUT_BASE / an_folder / f"{args.DS}_Transactions.csv"
+    output_file_path = OUT_BASE / an_folder / OUTPUT_FILENAME
     
     # Ensure header
     if not output_file_path.exists() or output_file_path.stat().st_size == 0:
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
         with output_file_path.open("w") as f:
-            f.write("Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n")
+            f.write("Date, Time, num_tables, num_threads, thread_config, DS_config, buckets, workload, duration, num_keys, locality, interval, ops_node0, ops_node1, total_ops\n")
 
-    # Wrap execution in try/except to catch runtime errors
-    try:
-        compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
-        run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER, args.DS)
+    compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
+    run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER)
 
-        if args.graph:
-            plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
-            # Note: adjust plot script path or arguments as needed for DS experiments
-            subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True, check=True)
+    if args.graph:
+        plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
+        subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
 
-        print(f"\nCOMPLETE. Results: {output_file_path}")
-
-    except subprocess.CalledProcessError as e:
-        print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")
-        # Ensure we exit with error status so calling scripts know it failed
-        sys.exit(e.returncode)
-    except Exception as e:
-        print(f"\n[FATAL ERROR] An unexpected runtime error occurred: {e}")
-        sys.exit(1)
-
+    print(f"\nCOMPLETE. Results: {output_file_path}")

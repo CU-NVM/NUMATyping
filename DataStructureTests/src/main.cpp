@@ -24,10 +24,10 @@ using namespace std;
 
 #ifdef NUMA_MACHINE
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #else
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #endif
 
 std::string thread_config;
@@ -84,20 +84,12 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
 
 void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover, int keyspace){
 	//Initialization
-	#ifdef PIN_INIT
-		if (numa_num_configured_nodes() == 1){
-			init_thread_regular0 = new thread(numa_BST_single_init, DS_config, num_DS/2, keyspace, 0, crossover);
-			init_thread_regular1 = new thread(numa_BST_single_init, DS_config, num_DS/2, keyspace, 1, crossover);
-		}
-		else{
-			init_thread0 = new thread_numa<NODE_ZERO>(numa_BST_init, DS_config, num_DS/2, keyspace, 0,crossover);
-			init_thread1 = new thread_numa<NODE_ONE>(numa_BST_init, DS_config, num_DS/2, keyspace, 1,crossover);
-		}
-	#else
-		std::cout<< "single threaded initialization running" <<std::endl;
-		numa_BST_single_init(DS_config, num_DS/2, keyspace, -1, crossover);
-	#endif	
-	
+	init_thread0 = new thread_numa<NODE_ZERO>(numa_BST_init, DS_config, num_DS/2, keyspace, 0,crossover);
+	init_thread1 = new thread_numa<NODE_ONE>(numa_BST_init, DS_config, num_DS/2, keyspace, 1,crossover);
+
+    if(init_thread0) init_thread0->join();
+    if(init_thread1) init_thread1->join();
+
 	//Test
 	for(int i=0; i < num_threads/2; i++){
 		int node = 0;

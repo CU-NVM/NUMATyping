@@ -132,7 +132,7 @@ if(NOT UMF_DISABLE_HWLOC)
                     memtargets/memtarget_numa.c)
     set(UMF_LIBS ${UMF_LIBS} ${LIBHWLOC_LIBRARIES})
     set(UMF_PRIVATE_LIBRARY_DIRS ${UMF_PRIVATE_LIBRARY_DIRS}
-                                 ${LIBHWLOC_LIBRARY_DIRS})
+                                  ${LIBHWLOC_LIBRARY_DIRS})
 else()
     set(UMF_COMMON_COMPILE_DEFINITIONS ${UMF_COMMON_COMPILE_DEFINITIONS}
                                        "UMF_NO_HWLOC=1")
@@ -247,7 +247,8 @@ target_include_directories(
            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/provider>
            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/memspaces>
            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/memtargets>
-           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    ${JEMALLOC_INCLUDE_DIRS})
 
 install(TARGETS umf EXPORT ${PROJECT_NAME}-targets)
 

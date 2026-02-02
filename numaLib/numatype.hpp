@@ -154,9 +154,6 @@ template<typename T, int NodeID, template <typename, int> class Alloc>
 class numa<T,NodeID, Alloc, typename std::enable_if<!(std::is_fundamental<T>::value || std::is_pointer<T>::value)>::type>: public T{
 public:
     numa(){
-        #ifdef UMF
-            printf("Default constructor called for numa<%s,%d>\n", typeid(T).name(), NodeID);
-        #endif
         //assert(false && "This constructor should never get called");
     }    
     template<typename... Args>

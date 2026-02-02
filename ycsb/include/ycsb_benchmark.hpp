@@ -34,7 +34,7 @@ WorkloadConfig selectWorkload(const string &w);
 
 void global_init(int num_threads, int duration, int interval);
 
-void numa_hash_table_init(int thread_id, int numa_node, std::string DS_config, int buckets, int num_tables, long long num_keys, int num_total_threads);
+void numa_hash_table_init(int thread_id, int numa_node, std::string DS_config, int buckets, int num_tables, uint64_t num_keys, int num_total_threads);
 
 void ycsb_test(
     int thread_id,
@@ -43,7 +43,7 @@ void ycsb_test(
     int duration,
     const WorkloadConfig* cfg,
     ZipfianGenerator* gen,
-    long long num_keys,
+    uint64_t num_keys,
     int local_pct,
     int interval,
     int num_tables
@@ -52,7 +52,7 @@ void ycsb_test(
 void run_ycsb_benchmark(
     const std::string& workload_key,
     int duration,
-    long long num_keys,
+    uint64_t num_keys,
     double theta,
     int buckets,
     const std::string& locality_key,

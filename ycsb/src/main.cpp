@@ -13,16 +13,16 @@ using namespace ycsbc;
 
 #ifdef NUMA_MACHINE
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #else
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #endif
 
 int num_threads = 2;
 int bucket_count = 1024;
 string workload_key = "A";
-long long num_keys = 10000;
+uint64_t num_keys = 10000;
 double theta = 0.99;
 string locality_key = "80-20";
 string th_config = "regular";
@@ -101,7 +101,7 @@ void compile_options(int argc, char *argv[]) {
             case 'b': bucket_count = std::stoi(optarg); break;
             case 'w': workload_key = optarg; break;
             case 'u': duration = std::stoi(optarg); break;
-            case 'k': num_keys = std::stoll(optarg); break;
+            case 'k': num_keys = std::stoull(optarg); break;
             case 'z': theta = std::stod(optarg); break;
             case 'l': locality_key = optarg; break;
             case 'c': th_config = optarg; break;
@@ -158,7 +158,7 @@ int selectLocality(const string &l) {
 void run_ycsb_benchmark(
     const string& workload_key,
     int duration,
-    long long num_keys,
+    uint64_t num_keys,
     double theta,
     int buckets,
     const string& locality_key,

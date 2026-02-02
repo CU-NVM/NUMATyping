@@ -25,10 +25,10 @@ using namespace std::chrono;
 
 #ifdef NUMA_MACHINE
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #else
 	#define NODE_ZERO 0
-	#define NODE_ONE 1
+	#define NODE_ONE 7
 #endif
 int global_successful_inserts;
 int global_successful_init_inserts;
@@ -73,7 +73,7 @@ void numa_hash_table_init(int thread_id,
                           std::string DS_config,
                           int buckets,
                           int num_tables,        // tables per node
-                          long long num_keys,
+                          uint64_t num_keys,
                           int num_total_threads)
 {
     int threads_per_node = num_total_threads / 2;
@@ -132,7 +132,7 @@ void numa_hash_table_init(int thread_id,
     // ------------------ RNG (UNIQUE PER THREAD) ------------------
     std::random_device rd;
     std::mt19937_64 rng(rd() ^ (node << 16) ^ thread_id);
-    std::uniform_int_distribution<long long> dist(0, num_keys - 1);
+    std::uniform_int_distribution<uint64_t> dist(0, num_keys - 1);
     int tables_per_node = num_tables;
     long long local_successful_inserts = 0;
     int actual_total_tables = tables_per_node * 2;
@@ -179,11 +179,11 @@ void numa_hash_table_init(int thread_id,
     globalLK->unlock();
 
     pthread_barrier_wait(&init_bar);
-
-    if (thread_id == 0) {
-        std::cout << "Prefill complete. Total inserts = "
-                  << global_successful_init_inserts << std::endl;
-    }
+    #ifdef DEBUG
+        if (thread_id == 0) {
+            std::cout << "Prefill complete. Total inserts = "  << global_successful_init_inserts << std::endl;
+        }
+    #endif
 
     pthread_barrier_wait(&init_bar);
 }
@@ -222,7 +222,7 @@ void ycsb_test(
     int duration,
     const WorkloadConfig* cfg,
     ZipfianGenerator* gen,
-    long long num_keys,
+    uint64_t num_keys,
     int local_pct,
     int interval,
     int num_tables
@@ -249,7 +249,7 @@ void ycsb_test(
     uniform_int_distribution<int> op_dist(1, 100);
     uniform_int_distribution<int> locality_dist(1, 100);
     uniform_int_distribution<int> ht_dist(0, num_tables-1); // already passed in as num_tables/2 aka tables_per_node
-    uniform_int_distribution<long long> key_dist(0, num_keys-1);
+    uniform_int_distribution<uint64_t> key_dist(0, num_keys-1);
     int successful_inserts = 0;
 	while (duration_cast<seconds>(steady_clock::now() - startTimer).count() < duration) {
 		//uint64_t key_id = gen->Next();
@@ -415,11 +415,13 @@ void ycsb_test(
 	globalLK->unlock();
 
 	pthread_barrier_wait(&bar);
-
-    globalLK->lock();
-    if(thread_id == 0 && numa_node==0) {
-        std::cout<< "All successful inserts are " << global_successful_inserts << std::endl;  
-    }
-    globalLK->unlock();
+    
+    #ifdef DEBUG
+        globalLK->lock();
+            if(thread_id == 0 && numa_node==0) {
+                std::cout<< "All successful inserts are " << global_successful_inserts << std::endl;  
+            }
+        globalLK->unlock();
+    #endif
 }
 
