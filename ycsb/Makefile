@@ -1,8 +1,9 @@
 # Compiler and basic settings
 CC         := clang++
-CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1
+CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1 -DMAX_NODE=$(MAX_NODE_ID)
 LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
 
+$(info Compiling with Max node set to $(MAX_NODE_ID))
 # ROOT_DIR: Use provided value, otherwise default to $HOME/NUMATyping
 ROOT_DIR   ?= $(HOME)/NUMATyping
 

@@ -78,6 +78,11 @@ def main():
     if not os.path.exists(SRC_PATH):
         print(f"Error: Source {SRC_PATH} not found!")
         sys.exit(1)
+        
+    # --- Retrieve MAX_NODE_ID from Environment ---
+    # This assumes you ran 'eval $(python3 env.py)' before this script
+    MAX_NODE_ID = os.environ.get("MAX_NODE_ID", "0")
+    print(f"--- Configuration Detected: MAX_NODE_ID={MAX_NODE_ID} ---")
 
     # Tool and Working Dirs
     TOOL_BIN = f"{ROOT_DIR}/numa-clang-tool/build/bin/clang-tool"
@@ -109,7 +114,8 @@ def main():
                      f"-I{U}/src/memspaces -I{U}/src/memtargets -DUMF "
                      f"-lhwloc -lrt -ldl -ljemalloc {U}/build/lib/libumf.a {U}/build/lib/libjemalloc_pool.a")
 
-    BASE_FLAGS = f"-I{ROOT_DIR}/numaLib/ -I{CLANG_INC} -I{JEMALLOC}/include -lnuma -pthread {UMF_FLAGS}"
+    # Inject MAX_NODE_ID directly into BASE_FLAGS here
+    BASE_FLAGS = f"-I{ROOT_DIR}/numaLib/ -I{CLANG_INC} -I{JEMALLOC}/include -lnuma -pthread -DMAX_NODE={MAX_NODE_ID} {UMF_FLAGS}"
 
     # ============================================================================
     # 3. Execution
@@ -128,6 +134,7 @@ def main():
         # Format the file list correctly for the tool
         file_list = ",".join([f"{work_dir}/src/{f}" for f in FILES.split(",")])
         
+        # NOTE: removed -DMAX_NODE=$MAX_NODE_ID from here because it's now in BASE_FLAGS
         cmd = (f"{TOOL_BIN} --pass={pass_name} --input={file_list} dummy.cpp -- "
                f"-I {work_dir}/include/ -I {work_dir}/util/ {BASE_FLAGS}")
         

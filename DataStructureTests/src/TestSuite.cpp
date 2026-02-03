@@ -26,13 +26,11 @@
 
 #define MEGABYTE 1048576
 
+#define NODE_ZERO 0
 
-#ifdef NUMA_MACHINE
-	#define NODE_ZERO 0
-	#define NODE_ONE 7
-#else
-	#define NODE_ZERO 0
-	#define NODE_ONE 7
+#ifndef MAX_NODE
+    #warning "MAX_NODE not defined! Defaulting to 0."
+    #define MAX_NODE 1
 #endif
 
 
@@ -124,7 +122,7 @@ void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int n
 		
 		if(DS_config=="numa"){
 			BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
-			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
+			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
 		}
 		else{
 			BSTs0[i] = new BinarySearchTree();
@@ -173,7 +171,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 			int x = xDist(gen);
 			if(x <= crossover){
 				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
+					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
 				}
 				else{
 					BSTs1[i] = new BinarySearchTree();
@@ -230,7 +228,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				}
 			}else{
 				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
+					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
 				}
 				else{
 					BSTs1[i] = new BinarySearchTree();

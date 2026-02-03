@@ -1,8 +1,9 @@
 # Compiler and basic settings
 CC         := clang++
-CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1
+CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1 -DMAX_NODE=$(MAX_NODE_ID)
 LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
 
+$(info Building with MAX_NODE set to $(MAX_NODE_ID))
 # ROOT_DIR: Use provided value, otherwise default to $HOME/NUMATyping
 ROOT_DIR   ?= $(HOME)/NUMATyping
 
@@ -32,8 +33,8 @@ ifeq ($(UMF), 1)
         -I$(ROOT_DIR)/unified-memory-framework/src/memspaces \
         -I$(ROOT_DIR)/unified-memory-framework/src/memtargets \
         -DUMF \
-		-DPIN_INIT
-
+		-DPIN_INIT \
+		-DMAX_NODE=$(MAX_NODE_ID)
     # Only add Jemalloc-specific flags if JEMALLOC_ROOT is defined
     ifdef JEMALLOC_ROOT
         UMF_INC_DIRS += -I$(JEMALLOC_ROOT)/include

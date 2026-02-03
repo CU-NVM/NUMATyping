@@ -11,14 +11,12 @@
 using namespace std;
 using namespace ycsbc;
 
-#ifdef NUMA_MACHINE
-	#define NODE_ZERO 0
-	#define NODE_ONE 7
-#else
-	#define NODE_ZERO 0
-	#define NODE_ONE 7
-#endif
+#define NODE_ZERO 0
 
+#ifndef MAX_NODE
+    #warning "MAX_NODE not defined! Defaulting to 0."
+    #define MAX_NODE 0
+#endif
 int num_threads = 2;
 int bucket_count = 1024;
 string workload_key = "A";
@@ -40,11 +38,11 @@ std::vector <int64_t> num_ops0;
 std::vector <int64_t> total_ops;
 
 vector<thread_numa<NODE_ZERO>*> numa_thread0;
-vector<thread_numa<NODE_ONE>*> numa_thread1;
+vector<thread_numa<MAX_NODE>*> numa_thread1;
 vector<thread*> regular_thread0;
 vector<thread*> regular_thread1;
 vector<thread_numa<NODE_ZERO>*> init_thread0;
-vector<thread_numa<NODE_ONE>*> init_thread1;
+vector<thread_numa<MAX_NODE>*> init_thread1;
 std::thread* init_thread_regular0;
 std::thread* init_thread_regular1;
 
@@ -194,11 +192,11 @@ void run_ycsb_benchmark(
         {   
             int thread_id = i + threads_per_node;
             int numa_node = 1;
-            init_thread1[i] = new thread_numa<NODE_ONE>(numa_hash_table_init, thread_id ,numa_node, DS_config, buckets, num_tables/2, num_keys, num_threads);
+            init_thread1[i] = new thread_numa<MAX_NODE>(numa_hash_table_init, thread_id ,numa_node, DS_config, buckets, num_tables/2, num_keys, num_threads);
         }
 	#else
         init_thread_regular0 = new thread(numa_hash_table_init, 0, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys, num_threads);
-        init_thread_regular1 = new thread(numa_hash_table_init, threads_per_node, NODE_ONE , DS_config, buckets, num_tables/2, num_keys, num_threads);
+        init_thread_regular1 = new thread(numa_hash_table_init, threads_per_node, MAX_NODE , DS_config, buckets, num_tables/2, num_keys, num_threads);
     #endif
 
 
@@ -250,7 +248,7 @@ void run_ycsb_benchmark(
         int thread_id = i + threads_per_node;
         int numa_node = 1;
         if (th_config == "numa") {
-            numa_thread1[i] = new thread_numa<NODE_ONE>(
+            numa_thread1[i] = new thread_numa<MAX_NODE>(
                 ycsb_test,
                 thread_id, threads_per_node, numa_node, duration, &cfg, 
                 generators[thread_id], num_keys, local_pct, interval, tables_per_node
