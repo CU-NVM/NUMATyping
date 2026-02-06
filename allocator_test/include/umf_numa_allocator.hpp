@@ -73,7 +73,7 @@ error_memspace:
     return ret;
 }
 
-static constexpr unsigned NUM_NODES = 8;
+static constexpr unsigned NUM_NODES = 2;
 static umf_memory_provider_handle_t NUMA_HANDLES[NUM_NODES]={};
 umf_memory_pool_handle_t jemalloc_pool[NUM_NODES]={};
     

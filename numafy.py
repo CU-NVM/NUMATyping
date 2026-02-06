@@ -123,7 +123,8 @@ def main():
     suite_map = {
         "Histogram": "main.cpp,Histogram.cpp",
         "DataStructureTests": "main.cpp,TestSuite.cpp",
-        "ycsb": "main.cpp,ycsb_benchmark.cpp"
+        "ycsb": "main.cpp,ycsb_benchmark.cpp",
+        "Array": "main.cpp,array.cpp"
     }
     
     FILES = suite_map.get(SUITE)

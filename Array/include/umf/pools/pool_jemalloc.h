@@ -43,7 +43,7 @@ typedef struct umf_memory_pool_t {
 } umf_memory_pool_t;
 
 
-#define MAX_JEMALLOC_THREADS 200
+#define MAX_JEMALLOC_THREADS 256
 
 /// @brief Configuration of Jemalloc Pool
 typedef struct umf_jemalloc_pool_params_t {

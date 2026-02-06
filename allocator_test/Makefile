@@ -1,7 +1,7 @@
 # Compiler and basic settings
 CC         := clang++
 CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1 -DMAX_NODE=$(MAX_NODE_ID) -DNUMA_NODE_NUM=$(NUM_NUMA_NODES)
-LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
+LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread 
 
 $(info Building with MAX_NODE set to $(MAX_NODE_ID))
 $(info Building with NUM_NUMA_NODES set to $(NUM_NUMA_NODES))
@@ -14,7 +14,7 @@ UMF_INC_DIRS :=
 
 # Executable and object files
 EXE  := ./bin/array
-OBJS := src/main.o src/array.o 
+OBJS := src/main.o 
 
 # Unified Memory Framework (optional)
 # Usage: make UMF=1 JEMALLOC_ROOT=/path/to/jemalloc

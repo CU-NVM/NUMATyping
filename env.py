@@ -15,7 +15,7 @@ def get_max_numa_node():
                 # Single node system (e.g., '0')
                 return content
     except Exception:
-        # Fallback: Default to 0 if sysfs is inaccessible
+        # Fallback: Default to 0 if sysfs is inaccessible (common on WSL or VMs)
         return "0"
 
 def get_spack_path(package):
@@ -66,9 +66,13 @@ def main():
     
     # 3. Detect and export NUMA Topology
     max_node = get_max_numa_node()
-    exports.append(f"export MAX_NODE_ID={max_node}")
+    # Calculate total nodes: if max_node is 1, total nodes = 2 (0 and 1)
+    num_of_nodes = int(max_node) + 1
     
-    # 4. Add any other project-specific variables
+    exports.append(f"export MAX_NODE_ID={max_node}")
+    exports.append(f"export NUM_NUMA_NODES={num_of_nodes}")
+    
+    # 4. Project-specific variables
     exports.append("export BUILD_TYPE=Release")
     
     # Output the string for the shell to 'eval'

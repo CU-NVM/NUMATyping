@@ -11,12 +11,13 @@
 using namespace std;
 using namespace ycsbc;
 
-#define NODE_ZERO 0
 
+#define NODE_ZERO 0
 #ifndef MAX_NODE
-    #warning "MAX_NODE not defined! Defaulting to 0."
-    #define MAX_NODE 0
+    #warning "MAX_NODE_ID not defined! Defaulting to 0."
+    #define MAX_NODE 1
 #endif
+
 int num_threads = 2;
 int bucket_count = 1024;
 string workload_key = "A";
@@ -103,8 +104,6 @@ void compile_options(int argc, char *argv[]) {
             case 'z': theta = std::stod(optarg); break;
             case 'l': locality_key = optarg; break;
             case 'c': th_config = optarg; break;
-            case 'd': DS_config = optarg; break;
-            case 'i': interval = std::stoi(optarg); break;
             case 'a': num_tables = std::stoi(optarg); break;
             case 'h':
                 cout << "Usage: ./runner [options]\n";
@@ -305,6 +304,8 @@ int main(int argc, char** argv) {
         bucket_count,
         locality_key,
         num_threads,
+        th_config,
+        DS_config,
         th_config,
         DS_config,
         num_tables

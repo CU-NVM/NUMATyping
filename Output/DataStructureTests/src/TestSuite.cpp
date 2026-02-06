@@ -162,7 +162,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 		BST_reader_lk1.resize(BSTs1.size());
 	}
 	pthread_barrier_wait(&init_bar);
-	std::mt19937 gen(123);
+	std::mt19937 gen(node);
 	std::uniform_int_distribution<> xDist(1, 100);
 	std::uniform_int_distribution<> dist(0, keyspace);
 	if(node == 0){
@@ -199,20 +199,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 			}
 		}
 
-		for(int i = 0; i < keyspace/2 ; i++)
-		{	
-			int x = xDist(gen);
-			if(x <= crossover){
-				for(int j=0; j < num_DS; j++){
-					BSTs1[j]->insert(dist(gen));
-				}
-			}else{
-				for(int j=0; j < num_DS; j++){
-					BSTs0[j]->insert(dist(gen));
-				}
-			}
-		}
-	}
+    }
 
 	if(node == 1){
 		
@@ -245,6 +232,10 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				BST_lk1[i] = new mutex();
 			}
 		}	
+    }
+    pthread_barrier_wait(&init_bar);
+    
+    if(node == 1){
 		
 		for(int i = 0; i < keyspace/2 ; i++)
 		{
@@ -259,12 +250,29 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				}
 			}
 		}
-	}
+    }
+
+
+    if(node == 0){
+		for(int i = 0; i < keyspace/2 ; i++)
+		{	
+			int x = xDist(gen);
+			if(x <= crossover){
+				for(int j=0; j < num_DS; j++){
+					BSTs1[j]->insert(dist(gen));
+				}
+			}else{
+				for(int j=0; j < num_DS; j++){
+					BSTs0[j]->insert(dist(gen));
+				}
+			}
+		}	
+    }
 
 	pthread_barrier_wait(&init_bar);
 	
-	//std::cout<<"BSTs initialized"<<std::endl<<std::endl<<std::endl<<std::endl;
-
+	std::cout<<"BSTs initialized"<<std::endl<<std::endl<<std::endl<<std::endl;
+    pthread_barrier_wait(&init_bar);
 }
 
 void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_threads, int crossover, int keyspace, int interval)

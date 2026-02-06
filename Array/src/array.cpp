@@ -21,13 +21,13 @@
 using namespace std;
 using namespace std::chrono;
 
-#ifdef NUMA_MACHINE
-	#define NODE_ZERO 0
-	#define NODE_ONE 1
-#else
-	#define NODE_ZERO 0
-	#define NODE_ONE 1
+#define NODE_ZERO 0
+#ifndef MAX_NODE 
+	#warning "MAX_NODE_ID not defined! Defaulting to 0."
+	#define MAX_NODE 1
 #endif
+
+
 int global_successful_inserts;
 int global_successful_init_inserts;
 std::vector<char**> array_node0;
@@ -91,7 +91,7 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
    else if (node == 1 && thread_id % threads_per_node == 0) {
         for (int i = 0; i < num_arrays; i++) {
             if (DS_config != "regular") {
-                array_node1[i] = reinterpret_cast<char**> (new numa<char*, NODE_ONE>[array_size]);
+                array_node1[i] = reinterpret_cast<char**> (new numa<char*, MAX_NODE>[array_size]);
             }
             else if(DS_config == "regular"){
                 array_node1[i] = new char*[array_size];
@@ -111,7 +111,6 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
         }
     }
     pthread_barrier_wait(&init_bar);
-
     //random number generator for keys
     std::mt19937 rng(static_cast<unsigned int>(time(nullptr)) + thread_id);
     std::uniform_int_distribution<int> key_dist(1, array_size*10);
@@ -147,13 +146,13 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
                 else {
                     std::string temp = "key" + std::to_string(key_dist(rng));
                     letters= temp.c_str();
-                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,1>[strlen(letters) + 1]));
+                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,MAX_NODE>[strlen(letters) + 1]));
                 }
                 array_node1[i][j] = word;
             }
         }
     }
-
+    pthread_barrier_wait(&init_bar);
 }
 
 
