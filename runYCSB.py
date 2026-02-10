@@ -107,7 +107,7 @@ def run_experiment(output_csv: Path, experiment_folder: str) -> None:
     cmd = (f'cd {experiment_folder} && python3 meta.py '
            f'numactl --cpunodebind={bind_str} --membind={bind_str} ./bin/ycsb '
            f'--meta th_config:numa:regular --meta DS_config:numa:regular '
-           f'--meta t:256 --meta b:1333 --meta w:D --meta u:300 '
+           f'--meta t:128 --meta b:1333 --meta w:D --meta u:300 '
            f'--meta k:100000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
     
     print(f"--- Running Experiment ---\n{cmd}\n")

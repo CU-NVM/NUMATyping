@@ -29,12 +29,19 @@ public:
 	//< Inherits int getData() from Node 
 
 
-	BinaryNode() : data(0), leftChild(NULL), rightChild(NULL)
-	{}
+	BinaryNode()
+	{
+        data=0;
+        leftChild = NULL;
+        rightChild = NULL;
+    }
 
 	BinaryNode(int data) 
-	: data(data), leftChild(NULL), rightChild(NULL)
-	{}
+	{
+        this->data =data;
+        leftChild = NULL;
+        rightChild = NULL;
+    }
 
 	~BinaryNode()
 	{

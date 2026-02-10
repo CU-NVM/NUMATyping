@@ -81,7 +81,8 @@ def main():
         
     # --- Retrieve MAX_NODE_ID from Environment ---
     # This assumes you ran 'eval $(python3 env.py)' before this script
-    MAX_NODE_ID = os.environ.get("MAX_NODE_ID", "0")
+    MAX_NODE_ID = os.environ.get("MAX_NODE_ID", "1")
+    NUM_NUMA_NODES = os.environ.get("NUM_NUMA_NODES","2")
     print(f"--- Configuration Detected: MAX_NODE_ID={MAX_NODE_ID} ---")
 
     # Tool and Working Dirs
@@ -115,7 +116,7 @@ def main():
                      f"-lhwloc -lrt -ldl -ljemalloc {U}/build/lib/libumf.a {U}/build/lib/libjemalloc_pool.a")
 
     # Inject MAX_NODE_ID directly into BASE_FLAGS here
-    BASE_FLAGS = f"-I{ROOT_DIR}/numaLib/ -I{CLANG_INC} -I{JEMALLOC}/include -lnuma -pthread -DMAX_NODE={MAX_NODE_ID} {UMF_FLAGS}"
+    BASE_FLAGS = f"-I{ROOT_DIR}/numaLib/ -I{CLANG_INC} -I{JEMALLOC}/include -lnuma -pthread {UMF_FLAGS} -DMAX_NODE={MAX_NODE_ID} -DNUMA_NODE_NUM={NUM_NUMA_NODES} "
 
     # ============================================================================
     # 3. Execution

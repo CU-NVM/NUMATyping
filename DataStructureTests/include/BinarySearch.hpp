@@ -122,9 +122,9 @@ public:
 
 };
 
-BinarySearchTree::BinarySearchTree() : root(NULL)
+BinarySearchTree::BinarySearchTree()
 {
-	
+    root = NULL;
 }
 
 BinarySearchTree::~BinarySearchTree()

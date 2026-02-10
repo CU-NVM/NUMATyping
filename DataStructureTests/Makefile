@@ -1,9 +1,10 @@
 # Compiler and basic settings
 CC         := clang++
-CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1 -DMAX_NODE=$(MAX_NODE_ID)
+CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1 -DMAX_NODE=$(MAX_NODE_ID) -DNUMA_NODE_NUM=$(NUM_NUMA_NODES)
 LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
 
 $(info Building with MAX_NODE set to $(MAX_NODE_ID))
+$(info Building with Node numbers set to $(NUM_NUMA_NODES))
 # ROOT_DIR: Use provided value, otherwise default to $HOME/NUMATyping
 ROOT_DIR   ?= $(HOME)/NUMATyping
 

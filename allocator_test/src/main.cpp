@@ -78,7 +78,7 @@ void test_umf(){
 	size_t start_mem = get_current_rss();
 
     for(size_t i=0; i < NUM_ALLOCS; ++i) {
-        void * ptr = umf_alloc(0, ALLOC_SIZE, 16);
+        void * ptr = umf_alloc(0, ALLOC_SIZE, 8);
         ((char*)ptr)[0]=1 ;
         ptr_array[i]= ptr;
     }
