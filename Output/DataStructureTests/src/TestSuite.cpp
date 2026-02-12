@@ -26,13 +26,11 @@
 
 #define MEGABYTE 1048576
 
+#define NODE_ZERO 0
 
-#ifdef NUMA_MACHINE
-	#define NODE_ZERO 0
-	#define NODE_ONE 1
-#else
-	#define NODE_ZERO 0
-	#define NODE_ONE 1
+#ifndef MAX_NODE
+    #warning "MAX_NODE not defined! Defaulting to 0."
+    #define MAX_NODE 1
 #endif
 
 
@@ -112,8 +110,8 @@ void global_init(int num_threads, int duration, int interval){
 void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int node, int crossover){
 	BSTs0.resize(num_DS);
 	BSTs1.resize(num_DS);
-	BST_lk0.resize(num_DS);
-	BST_lk1.resize(num_DS);
+	BST_lk0.resize(BSTs0.size());
+	BST_lk1.resize(BSTs1.size());
 
 	std::mt19937 gen(123);
 	std::uniform_int_distribution<> xDist(1, 100);
@@ -124,7 +122,7 @@ void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int n
 		
 		if(DS_config=="numa"){
 			BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
-			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
+			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
 		}
 		else{
 			BSTs0[i] = new BinarySearchTree();
@@ -156,26 +154,24 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 	crossover = -1;
 	//std::cout<<"crossover value from here is "<<crossover<<std::endl;
 	if(node==0 ){
-	
 		BSTs0.resize(num_DS);
 		BSTs1.resize(num_DS);
-		BST_lk0.resize(num_DS);
-		BST_lk1.resize(num_DS);
-		BST_reader_lk0.resize(num_DS);
-		BST_reader_lk1.resize(num_DS);
+		BST_lk0.resize(BSTs0.size());
+		BST_lk1.resize(BSTs1.size());
+		BST_reader_lk0.resize(BSTs0.size());
+		BST_reader_lk1.resize(BSTs1.size());
 	}
 	pthread_barrier_wait(&init_bar);
-	std::mt19937 gen(123);
+	std::mt19937 gen(node);
 	std::uniform_int_distribution<> xDist(1, 100);
 	std::uniform_int_distribution<> dist(0, keyspace);
-	
 	if(node == 0){
 		for(int i = 0; i < num_DS; i++)
 		{
 			int x = xDist(gen);
 			if(x <= crossover){
 				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
+					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
 				}
 				else{
 					BSTs1[i] = new BinarySearchTree();
@@ -203,20 +199,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 			}
 		}
 
-		for(int i = 0; i < keyspace/2 ; i++)
-		{	
-			int x = xDist(gen);
-			if(x <= crossover){
-				for(int j=0; j < num_DS; j++){
-					BSTs1[j]->insert(dist(gen));
-				}
-			}else{
-				for(int j=0; j < num_DS; j++){
-					BSTs0[j]->insert(dist(gen));
-				}
-			}
-		}
-	}
+    }
 
 	if(node == 1){
 		
@@ -232,7 +215,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				}
 			}else{
 				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ONE>());
+					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
 				}
 				else{
 					BSTs1[i] = new BinarySearchTree();
@@ -249,6 +232,10 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				BST_lk1[i] = new mutex();
 			}
 		}	
+    }
+    pthread_barrier_wait(&init_bar);
+    
+    if(node == 1){
 		
 		for(int i = 0; i < keyspace/2 ; i++)
 		{
@@ -263,12 +250,29 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				}
 			}
 		}
-	}
+    }
+
+
+    if(node == 0){
+		for(int i = 0; i < keyspace/2 ; i++)
+		{	
+			int x = xDist(gen);
+			if(x <= crossover){
+				for(int j=0; j < num_DS; j++){
+					BSTs1[j]->insert(dist(gen));
+				}
+			}else{
+				for(int j=0; j < num_DS; j++){
+					BSTs0[j]->insert(dist(gen));
+				}
+			}
+		}	
+    }
 
 	pthread_barrier_wait(&init_bar);
 	
-	//std::cout<<"BSTs initialized"<<std::endl<<std::endl<<std::endl<<std::endl;
-
+	std::cout<<"BSTs initialized"<<std::endl<<std::endl<<std::endl<<std::endl;
+    pthread_barrier_wait(&init_bar);
 }
 
 void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_threads, int crossover, int keyspace, int interval)

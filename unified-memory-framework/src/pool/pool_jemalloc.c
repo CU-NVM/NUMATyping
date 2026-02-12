@@ -468,7 +468,7 @@ static umf_result_t op_initialize(umf_memory_provider_handle_t provider,
 		VALGRIND_DO_CREATE_MEMPOOL(pool, 0, 0);
 	}
 	
-	assert(MAX_JEMALLOC_THREADS<250);
+	assert(MAX_JEMALLOC_THREADS<257);
 	for(unsigned i = 0; i< MAX_JEMALLOC_THREADS;i++){
 		unsigned tcache;
 		size_t sz = sizeof(unsigned);

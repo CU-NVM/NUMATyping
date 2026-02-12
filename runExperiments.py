@@ -70,32 +70,48 @@ def set_autonuma(desired: int) -> None:
 # ============================================================================
 
 def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
+    # Pass the MAX_NODE_ID to the Makefile via environment variable or Make arg
+    max_node = os.environ.get("MAX_NODE_ID", "0")
+    
     if do_numafy:
         numafy_script = os.path.join(root_dir, "numafy.py")
         numafy_cmd = ["python3", numafy_script, f"--ROOT_DIR={root_dir}", "DataStructureTests", f"--umf={1 if UMF else 0}"]
         if jemalloc_root:
             numafy_cmd.append(f"--jemalloc-root={jemalloc_root}")
         
-        print(f"\n--- Running Transformation ---")
+        print(f"\n--- Running Transformation (MAX_NODE_ID={max_node}) ---")
         subprocess.run(numafy_cmd, check=True)
 
     print(f"\n--- Compiling in {experiment_folder} ---")
     subprocess.run(f"make -C {experiment_folder} clean", shell=True, check=False)
     
-    make_vars = f"ROOT_DIR={root_dir}"
+    # Add MAX_NODE_ID to make variables just in case the Makefile uses it directly
+    make_vars = f"ROOT_DIR={root_dir} MAX_NODE_ID={max_node}"
     if jemalloc_root: make_vars += f" JEMALLOC_ROOT={jemalloc_root}"
     if UMF: make_vars += " UMF=1"
     
     subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
 def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str) -> None:
-    # Constructing the command using the specific logic for DataStructureTest
+    # 1. Retrieve Max Node ID
+    max_node = os.environ.get("MAX_NODE_ID", "0")
+    
+    # 2. Construct the bind string (e.g., "0,7" or "0,3")
+    # If max_node is 0 (single node system), we just use "0" to avoid errors.
+    if max_node == "0":
+        bind_str = "0"
+    else:
+        bind_str = f"0,{max_node}"
+
+    print(f"--- Configuring NUMA Binding: {bind_str} ---")
+
+    # 3. Construct the command dynamically
     cmd = (
         f'cd {experiment_folder} && python3 meta.py '
-        'numactl --cpunodebind=0,7 --membind=0,7 '
+        f'numactl --cpunodebind={bind_str} --membind={bind_str} '
         './bin/datastructures '
-        '--meta n:30000000 '
-        '--meta t:128:256 '
+        '--meta n:20000000 '
+        '--meta t:128 '
         '--meta D:300 '
         f'--meta DS_name:{DS_name} '
         '--meta th_config:numa:regular:reverse '
@@ -165,9 +181,7 @@ if __name__ == "__main__":
 
     except subprocess.CalledProcessError as e:
         print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")
-        # Ensure we exit with error status so calling scripts know it failed
         sys.exit(e.returncode)
     except Exception as e:
         print(f"\n[FATAL ERROR] An unexpected runtime error occurred: {e}")
         sys.exit(1)
-

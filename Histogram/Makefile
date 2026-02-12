@@ -25,7 +25,7 @@ ifeq ($(UMF), 1)
   -I$(HOME_DIR)/NUMATyping/unified-memory-framework/include -I$(HOME_DIR)/NUMATyping/unified-memory-framework/examples/common \
   -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/ravl \
   -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/critnib -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/provider \
-  -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/memspaces -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/memtargets -DUMF
+  -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/memspaces -I$(HOME_DIR)/NUMATyping/unified-memory-framework/src/memtargets -DUMF -g3
 endif
 
 all: $(EXE)
@@ -33,7 +33,7 @@ all: $(EXE)
 $(EXE): $(OBJS)
 	$(CXX) $(OBJS) $(LINK_FLAGS) -o $(EXE)
 
-CXXFLAGS_COMMON = -O0 -g -std=c++20 -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)
+CXXFLAGS_COMMON = -O0 -g3 -std=c++20 -pthread $(INC_DIRS) $(UMF_INC_DIRS) $(FLAGS)
 #-fno-strict-aliasing \
                   -fno-vectorize -fno-unroll-loops $(SANITIZE)
 

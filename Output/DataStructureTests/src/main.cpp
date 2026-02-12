@@ -22,13 +22,12 @@
 
 using namespace std;
 
-#ifdef NUMA_MACHINE
-	#define NODE_ZERO 0
-	#define NODE_ONE 1
-#else
-	#define NODE_ZERO 0
-	#define NODE_ONE 0
+#define NODE_ZERO 0
+#ifndef MAX_NODE
+    #warning "MAX_NODE_ID not defined! Defaulting to 0."
+    #define MAX_NODE 1
 #endif
+
 
 std::string thread_config;
 std::string DS_config;
@@ -54,11 +53,11 @@ std::vector <int64_t> total_ops;
 
 
 std::vector <thread_numa<NODE_ZERO>*> numa_thread0;
-std::vector <thread_numa<NODE_ONE>*> numa_thread1;
+std::vector <thread_numa<MAX_NODE>*> numa_thread1;
 std::vector <thread*> regular_thread0;
 std::vector <thread*> regular_thread1;
 thread_numa<NODE_ZERO>* init_thread0;
-thread_numa<NODE_ONE>* init_thread1;
+thread_numa<MAX_NODE>* init_thread1;
 std::thread* init_thread_regular0;
 std::thread* init_thread_regular1;
 
@@ -84,20 +83,12 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps){
 
 void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover, int keyspace){
 	//Initialization
-	#ifdef PIN_INIT
-		if (numa_num_configured_nodes() == 1){
-			init_thread_regular0 = new thread(numa_BST_single_init, DS_config, num_DS/2, keyspace, 0, crossover);
-			init_thread_regular1 = new thread(numa_BST_single_init, DS_config, num_DS/2, keyspace, 1, crossover);
-		}
-		else{
-			init_thread0 = new thread_numa<NODE_ZERO>(numa_BST_init, DS_config, num_DS/2, keyspace, 0,crossover);
-			init_thread1 = new thread_numa<NODE_ONE>(numa_BST_init, DS_config, num_DS/2, keyspace, 1,crossover);
-		}
-	#else
-		std::cout<< "single threaded initialization running" <<std::endl;
-		numa_BST_single_init(DS_config, num_DS/2, keyspace, -1, crossover);
-	#endif	
-	
+	init_thread0 = new thread_numa<NODE_ZERO>(numa_BST_init, DS_config, num_DS/2, keyspace, 0,crossover);
+	init_thread1 = new thread_numa<MAX_NODE>(numa_BST_init, DS_config, num_DS/2, keyspace, 1,crossover);
+
+    if(init_thread0) init_thread0->join();
+    if(init_thread1) init_thread1->join();
+
 	//Test
 	for(int i=0; i < num_threads/2; i++){
 		int node = 0;
@@ -116,13 +107,13 @@ void main_BST_test(int duration, int64_t num_DS, int num_threads, int crossover,
 		int node = 1;
 		int tid = i + num_threads/2;
 		if(thread_config == "numa"){
-			numa_thread1[i] = new thread_numa<NODE_ONE>(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover,keyspace, interval);
+			numa_thread1[i] = new thread_numa<MAX_NODE>(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover,keyspace, interval);
 		}
 		else if(thread_config == "regular"){
 			regular_thread1[i] = new thread(BinarySearchTest,tid, duration, node, num_DS/2, num_threads/2, crossover,keyspace, interval);
 		}
 		else{
-			numa_thread1[i] = new thread_numa<NODE_ONE>(BinarySearchTest, tid, duration, 0, num_DS/2, num_threads/2, crossover, keyspace, interval);
+			numa_thread1[i] = new thread_numa<MAX_NODE>(BinarySearchTest, tid, duration, 0, num_DS/2, num_threads/2, crossover, keyspace, interval);
 		}
 	}
 
@@ -249,7 +240,6 @@ int main(int argc, char *argv[])
         }
     }
 
-	print_function(0, 0 ,0, 0);
     
 	numa_thread0.resize(num_threads);
 	numa_thread1.resize(num_threads);
@@ -266,34 +256,29 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	else if(DS_name == "bst"){
-		for(int i=0; i < run_freq; i++){
-			std::cout<<" About to run BST test "<< i+1 << " out of " << run_freq << " times"<<std::endl;
-			main_BST_test(duration, num_DS, num_threads, crossover, keyspace);
-		}
-		int64_t sum0 = 0;
-		int64_t sum1 = 0;
-		int64_t total_sum = 0;
-		//get the average of the numbers in the array
-		for(int i = 0; i < num_ops0.size(); i++){
-			sum0 += num_ops0[i];	
-		}
-		for(int i = 0; i < num_ops1.size(); i++){
-			sum1 += num_ops1[i];
-		}
-		for(int i = 0; i < total_ops.size(); i++){
-			total_sum += total_ops[i];
-		}
-		int newDuration = interval;
-		for(int i = 0; i< globalOps0.size(); i++){
-			print_function(newDuration, globalOps0[i], globalOps1[i], globalOps0[i] + globalOps1[i]);
-			newDuration += interval;
-		}
+
+	for(int i=0; i < run_freq; i++){
+		main_BST_test(duration, num_DS, num_threads, crossover, keyspace);
 	}
-	
-	else{
-		cout<<"Invalid Data Structure"<<endl;
+	int64_t sum0 = 0;
+	int64_t sum1 = 0;
+	int64_t total_sum = 0;
+	//get the average of the numbers in the array
+	for(int i = 0; i < num_ops0.size(); i++){
+		sum0 += num_ops0[i];	
 	}
+	for(int i = 0; i < num_ops1.size(); i++){
+		sum1 += num_ops1[i];
+	}
+	for(int i = 0; i < total_ops.size(); i++){
+		total_sum += total_ops[i];
+	}
+	int newDuration = interval;
+	for(int i = 0; i< globalOps0.size(); i++){
+		print_function(newDuration, globalOps0[i], globalOps1[i], globalOps0[i] + globalOps1[i]);
+		newDuration += interval;
+	}
+
 	global_cleanup();
 	// cout<<endl;
 }

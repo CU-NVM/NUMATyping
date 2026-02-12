@@ -13,7 +13,9 @@ public:
     ~HashNode();
 };
 
-HashNode::HashNode(const char* word) : count(1), next(nullptr) {
+HashNode::HashNode(const char* word){
+        count = 1;
+        next = nullptr;
         key = new char[strlen(word) + 1];
         strcpy(key, word);
     }

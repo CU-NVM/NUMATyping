@@ -12,9 +12,10 @@ This mimics a numa annotated data structure and thread structures yet to be recu
 # How to compile and run
 
 ```
-sudo make UMF=1
+make clean
+make UMF=1 ROOT_DIR=$HOME
 
-./bin/DataStructureTest -n 10240 -t 40 -D 20 --DS_name=bst --th_config=numa --DS_config=numa -k 160 -i 10
+numactl --cpunodebind=0,1 --membind=0,1 ./bin/datastructures -n 30000000 -t 40 -D 20 --DS_name=bst --th_config=numa --DS_config=numa -k 1600 -i 10
 ```
 
 

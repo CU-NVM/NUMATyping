@@ -98,7 +98,7 @@ class numa; // declaration of full numa type
 
 // primitive numa
 template<typename T, int NodeID, template <typename, int> class Alloc >
-class numa<T,NodeID, Alloc, typename std::enable_if<(std::is_fundamental<T>::value|| std::is_pointer<T>::value)>::type>{
+class numa<T,NodeID, Alloc, typename std::enable_if<(std::is_fundamental<T>::value|| std::is_pointer<T>::value)>::type> {
 public:
 	T contents;
 	using allocator_type = Alloc<T,NodeID>;
@@ -126,12 +126,12 @@ public:
 	// inline operator T() {return load();}
     inline operator T&(){return contents;}
     
+   
 	inline T operator-> (){
         // std::cout<<"operator -> called"<<std::endl;
 		static_assert(std::is_pointer<T>::value,"-> operator is only valid for pointer types");
 		return load();
 	}
-	
     static void* operator new(std::size_t sz){
 		allocator_type alloc;
         return alloc.allocate(sz);

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # plot_histogram.py  (X-axis = bucket_count; bars = min/max num_threads)
 # Usage:
-#   python plot_histogram.py your_data.csv --show
-#   python plot_histogram.py your_data.csv --save ./figs
+#   python plot_histogram.py data.csv --show
+#   python plot_histogram.py AN_off/histogram_experiments.csv --save ./AN_off/figs
 
 import argparse
 import os
@@ -67,17 +67,9 @@ def grouped_bar_positions(x_vals, n_groups, bar_width):
     return pos
 
 def plot_metric_grouped_bars(df: pd.DataFrame, metric: str, save_dir: str = None, show: bool = False):
-    """
-    X-axis: bucket_count (evenly spaced categories).
-    For each (thread_config, DS_config) combo and each bucket_count:
-      - faded bar: metric at the *lowest* num_threads present
-      - solid bar: metric at the *highest* num_threads present
-    Bars are grouped by bucket_count and laid side-by-side with no overlap.
-    """
-    # Evenly spaced categorical x-axis (0..N-1) regardless of bucket numeric value
-    x_levels = sorted(df["bucket_count"].unique())
+    #x_levels = sorted(df["bucket_count"].unique())
+    x_levels = [100, 2048]
     x_idx = list(range(len(x_levels)))
-
     n_combos = len(COMBOS)
     bars_per_group = n_combos * 2  # min + max for each combo
     group_width = 0.84             # total visual width per bucket group

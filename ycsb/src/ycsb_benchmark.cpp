@@ -23,13 +23,12 @@ using namespace std;
 using namespace ycsbc;
 using namespace std::chrono;
 
-#ifdef NUMA_MACHINE
-	#define NODE_ZERO 0
-	#define NODE_ONE 7
-#else
-	#define NODE_ZERO 0
-	#define NODE_ONE 7
+#define NODE_ZERO 0
+#ifndef MAX_NODE
+    #warning "MAX_NODE not defined! Defaulting to 0."
+    #define MAX_NODE 0
 #endif
+
 int global_successful_inserts;
 int global_successful_init_inserts;
 std::vector<HashTable*> ht_node0;
@@ -107,7 +106,7 @@ void numa_hash_table_init(int thread_id,
     if(thread_id == threads_per_node  && node == 1) {
         for (int i = 0; i < num_tables; i++) {
             if (DS_config == "numa") {
-                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, NODE_ONE>(buckets));
+                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, MAX_NODE>(buckets));
             }
             else {
                 ht_node1[i] = new HashTable(buckets);

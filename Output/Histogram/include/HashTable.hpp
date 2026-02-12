@@ -10,18 +10,19 @@ class HashTable{
     HashNode** table;
     int bucket_count;
 
-    virtual int hash(const char* key);
+   
 public:
     HashTable(int buckets);
     virtual ~HashTable();
-
+    virtual int hash(const char* key);
     virtual void insert(const char* key);
+    virtual void insert(const char* key, int count);
     virtual void remove(const char* key);
     virtual int getCount(const char* key);
     virtual bool updateCount(const char* key, int count);
     virtual bool exists(const char* key);
     virtual void printAll();
-    virtual std::vector<char*> getAllKeys();
+    virtual std::vector<const char*> getAllKeys();
 };
 
 template<>
@@ -76,6 +77,7 @@ public:
     }
 public:
 numa (int buckets){
+    this->bucket_count = buckets;
     this->table = reinterpret_cast<HashNode **>(reinterpret_cast<HashNode **>(new numa<HashNode *,0>[this->bucket_count]));
     for (int i = 0; i < this->bucket_count; i++) {
         this->table[i] = nullptr;
@@ -93,6 +95,15 @@ virtual ~numa()
     }
     delete[] table;
 }
+virtual int hash(const char * key){
+    unsigned long hash = 5381;
+    int c;
+    while ((c = *key++))
+        {
+            hash = ((hash << 5) + hash) + c;
+        }
+    return hash % this->bucket_count;
+}
 virtual void insert(const char * word){
     int idx = this->hash(word);
     HashNode *curr = this->table[idx];
@@ -105,6 +116,22 @@ virtual void insert(const char * word){
             curr = curr->next;
         }
     HashNode *newNode = reinterpret_cast<HashNode *>(reinterpret_cast<HashNode *>(new numa<HashNode,0>(word)));
+    newNode->next = this->table[idx];
+    this->table[idx] = newNode;
+}
+virtual void insert(const char * word, int count){
+    int idx = this->hash(word);
+    HashNode *curr = this->table[idx];
+    while (curr)
+        {
+            if (strcmp(curr->key, word) == 0) {
+                curr->count += count;
+                return;
+            }
+            curr = curr->next;
+        }
+    HashNode *newNode = reinterpret_cast<HashNode *>(reinterpret_cast<HashNode *>(new numa<HashNode,0>(word)));
+    newNode->count = count;
     newNode->next = this->table[idx];
     this->table[idx] = newNode;
 }
@@ -132,6 +159,9 @@ virtual int getCount(const char * word){
     HashNode *curr = this->table[idx];
     while (curr)
         {
+            if(curr->next){
+                __builtin_prefetch(curr->next);
+            }
             if (strcmp(curr->key, word) == 0) {
                 return curr->count;
             }
@@ -174,8 +204,8 @@ virtual void printAll(){
             }
     }
 }
-virtual std::vector<char *> getAllKeys(){
-    std::vector<char *> keys;
+virtual std::vector<const char *> getAllKeys(){
+    std::vector<const char *> keys;
     for (int i = 0; i < this->bucket_count; i++) {
         HashNode *curr = this->table[i];
         while (curr)
@@ -189,15 +219,6 @@ virtual std::vector<char *> getAllKeys(){
 private:
 numa<HashNode **,0> table;
 numa<int,0> bucket_count;
-virtual int hash(const char * key){
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *key++))
-        {
-            hash = ((hash << 5) + hash) + c;
-        }
-    return hash % this->bucket_count;
-}
 };
 
 template<>
@@ -252,6 +273,7 @@ public:
     }
 public:
 numa (int buckets){
+    this->bucket_count = buckets;
     this->table = reinterpret_cast<HashNode **>(reinterpret_cast<HashNode **>(new numa<HashNode *,1>[this->bucket_count]));
     for (int i = 0; i < this->bucket_count; i++) {
         this->table[i] = nullptr;
@@ -269,6 +291,15 @@ virtual ~numa()
     }
     delete[] table;
 }
+virtual int hash(const char * key){
+    unsigned long hash = 5381;
+    int c;
+    while ((c = *key++))
+        {
+            hash = ((hash << 5) + hash) + c;
+        }
+    return hash % this->bucket_count;
+}
 virtual void insert(const char * word){
     int idx = this->hash(word);
     HashNode *curr = this->table[idx];
@@ -281,6 +312,22 @@ virtual void insert(const char * word){
             curr = curr->next;
         }
     HashNode *newNode = reinterpret_cast<HashNode *>(reinterpret_cast<HashNode *>(new numa<HashNode,1>(word)));
+    newNode->next = this->table[idx];
+    this->table[idx] = newNode;
+}
+virtual void insert(const char * word, int count){
+    int idx = this->hash(word);
+    HashNode *curr = this->table[idx];
+    while (curr)
+        {
+            if (strcmp(curr->key, word) == 0) {
+                curr->count += count;
+                return;
+            }
+            curr = curr->next;
+        }
+    HashNode *newNode = reinterpret_cast<HashNode *>(reinterpret_cast<HashNode *>(new numa<HashNode,1>(word)));
+    newNode->count = count;
     newNode->next = this->table[idx];
     this->table[idx] = newNode;
 }
@@ -350,8 +397,8 @@ virtual void printAll(){
             }
     }
 }
-virtual std::vector<char *> getAllKeys(){
-    std::vector<char *> keys;
+virtual std::vector<const char *> getAllKeys(){
+    std::vector<const char *> keys;
     for (int i = 0; i < this->bucket_count; i++) {
         HashNode *curr = this->table[i];
         while (curr)
@@ -365,19 +412,11 @@ virtual std::vector<char *> getAllKeys(){
 private:
 numa<HashNode **,1> table;
 numa<int,1> bucket_count;
-virtual int hash(const char * key){
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *key++))
-        {
-            hash = ((hash << 5) + hash) + c;
-        }
-    return hash % this->bucket_count;
-}
 };
 
 
-HashTable::HashTable(int buckets) : bucket_count(buckets) {
+HashTable::HashTable(int buckets) {
+    bucket_count = buckets;
     table = new HashNode*[bucket_count];
     for(int i = 0; i < bucket_count; i++) {
         table[i] = nullptr;
@@ -416,6 +455,22 @@ void HashTable::insert(const char* word){
         curr = curr->next;
     }
     HashNode* newNode = new HashNode(word);
+    newNode->next = table[idx];
+    table[idx] = newNode;
+}
+
+void HashTable::insert(const char* word, int count){
+    int idx = hash(word);
+    HashNode* curr = table[idx];
+    while(curr){
+        if(strcmp(curr->key, word)==0){
+            curr->count += count;
+            return;
+        }
+        curr = curr->next;
+    }
+    HashNode* newNode = new HashNode(word);
+    newNode->count = count;
     newNode->next = table[idx];
     table[idx] = newNode;
 }
@@ -487,8 +542,8 @@ void HashTable::printAll(){
     }
 }
 
-std::vector<char*> HashTable::getAllKeys(){
-    std::vector<char*> keys;
+std::vector<const char*> HashTable::getAllKeys(){
+    std::vector<const char*> keys;
     for(int i = 0; i < bucket_count; i++) {
         HashNode* curr = table[i];
         while(curr){

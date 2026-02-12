@@ -69,30 +69,48 @@ def set_autonuma(desired: int) -> None:
 # ============================================================================
 
 def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
+    # Retrieve MAX_NODE_ID for logging and Make
+    max_node = os.environ.get("MAX_NODE_ID", "0")
+
     if do_numafy:
         numafy_script = os.path.join(root_dir, "numafy.py")
         numafy_cmd = ["python3", numafy_script, f"--ROOT_DIR={root_dir}", "ycsb", f"--umf={1 if UMF else 0}"]
         if jemalloc_root:
             numafy_cmd.append(f"--jemalloc-root={jemalloc_root}")
         
-        print(f"\n--- Running Transformation ---")
+        print(f"\n--- Running Transformation (MAX_NODE_ID={max_node}) ---")
         subprocess.run(numafy_cmd, check=True)
 
     print(f"\n--- Compiling in {experiment_folder} ---")
     subprocess.run(f"make -C {experiment_folder} clean", shell=True, check=False)
     
-    make_vars = f"ROOT_DIR={root_dir}"
+    # Pass MAX_NODE_ID to Make
+    make_vars = f"ROOT_DIR={root_dir} MAX_NODE_ID={max_node}"
     if jemalloc_root: make_vars += f" JEMALLOC_ROOT={jemalloc_root}"
     if UMF: make_vars += " UMF=1"
     
     subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
 def run_experiment(output_csv: Path, experiment_folder: str) -> None:
+    # 1. Retrieve Max Node ID
+    max_node = os.environ.get("MAX_NODE_ID", "0")
+    
+    # 2. Construct the bind string (e.g., "0,7" or "0,3")
+    if max_node == "0":
+        bind_str = "0"
+    else:
+        bind_str = f"0,{max_node}"
+
+    print(f"--- Configuring NUMA Binding: {bind_str} ---")
+
+    # 3. Construct the command dynamically
     cmd = (f'cd {experiment_folder} && python3 meta.py '
-           f'numactl --cpunodebind=0,7 --membind=0,7 ./bin/ycsb '
+           f'numactl --cpunodebind={bind_str} --membind={bind_str} ./bin/ycsb '
            f'--meta th_config:numa:regular --meta DS_config:numa:regular '
-           f'--meta t:80 --meta b:1333 --meta w:D --meta u:20 '
-           f'--meta k:15000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
+           f'--meta t:128 --meta b:1333 --meta w:D --meta u:300 '
+           f'--meta k:100000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
+    
+    print(f"--- Running Experiment ---\n{cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
 # ============================================================================
@@ -117,7 +135,6 @@ if __name__ == "__main__":
     except:
         show_help()
 
-    # Fixed: Define variable inside scope
     OUTPUT_FILENAME = "ycsb_experiments.csv"
     ROOT_DIR = os.path.abspath(args.ROOT_DIR)
     
@@ -141,11 +158,19 @@ if __name__ == "__main__":
         with output_file_path.open("w") as f:
             f.write("Date, Time, num_tables, num_threads, thread_config, DS_config, buckets, workload, duration, num_keys, locality, interval, ops_node0, ops_node1, total_ops\n")
 
-    compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
-    run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER)
+    try:
+        compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
+        run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER)
 
-    if args.graph:
-        plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
-        subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
+        if args.graph:
+            plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
+            subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
+            
+        print(f"\nCOMPLETE. Results: {output_file_path}")
 
-    print(f"\nCOMPLETE. Results: {output_file_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")
+        sys.exit(e.returncode)
+    except Exception as e:
+        print(f"\n[FATAL ERROR] An unexpected runtime error occurred: {e}")
+        sys.exit(1)
