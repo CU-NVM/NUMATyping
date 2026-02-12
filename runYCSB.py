@@ -149,5 +149,3 @@ if __name__ == "__main__":
         subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
 
     print(f"\nCOMPLETE. Results: {output_file_path}")
-
-    # This comment is useless and may be removed at a later date.
