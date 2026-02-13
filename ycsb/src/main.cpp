@@ -179,7 +179,6 @@ void run_ycsb_benchmark(
     global_init(num_threads, duration, interval);
     int threads_per_node = num_threads / 2;
 //Initialization
-	#ifdef PIN_INIT 
         init_thread0.resize(threads_per_node);
         init_thread1.resize(threads_per_node);
         for(int i=0; i< threads_per_node; ++i)
@@ -194,23 +193,12 @@ void run_ycsb_benchmark(
             int numa_node = 1;
             init_thread1[i] = new thread_numa<MAX_NODE>(numa_hash_table_init, thread_id ,numa_node, DS_config, buckets, num_tables/2, num_keys, num_threads);
         }
-	#else
-        init_thread_regular0 = new thread(numa_hash_table_init, 0, NODE_ZERO , DS_config, buckets, num_tables/2, num_keys, num_threads);
-        init_thread_regular1 = new thread(numa_hash_table_init, threads_per_node, MAX_NODE , DS_config, buckets, num_tables/2, num_keys, num_threads);
-    #endif
 
 
-    #ifdef PIN_INIT 
         for(auto th : init_thread0) th->join();
         for(auto th : init_thread1) th->join();
         for(auto th : init_thread0) delete th;
         for(auto th : init_thread1) delete th;
-    #else
-        init_thread_regular0->join();
-        init_thread_regular1->join();
-        delete init_thread_regular0;
-        delete init_thread_regular1;
-    #endif
 //End Initialization
 
  

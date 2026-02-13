@@ -25,14 +25,14 @@ using namespace std::chrono;
 
 #define NODE_ZERO 0
 #ifndef MAX_NODE
-    #warning "MAX_NODE not defined! Defaulting to 0."
-    #define MAX_NODE 0
+    #warning "MAX_NODE not defined! Defaulting to 1."
+    #define MAX_NODE 1
 #endif
 
 int global_successful_inserts;
 int global_successful_init_inserts;
-std::vector<HashTable*> ht_node0;
-std::vector<HashTable*> ht_node1;
+HashTable** ht_node0;
+HashTable** ht_node1;
 std::vector<std::mutex*> ht_node0_locks;
 std::vector<std::mutex*> ht_node1_locks;
 
@@ -76,46 +76,48 @@ void numa_hash_table_init(int thread_id,
                           int num_total_threads)
 {
     int threads_per_node = num_total_threads / 2;
-
-    // ------------------ GLOBAL RESIZE (ONCE) ------------------
-    if (thread_id == 0) {
-        ht_node0.resize(num_tables);
-        ht_node1.resize(num_tables);
-        
-        ht_node0_locks.resize(num_tables);
-        ht_node1_locks.resize(num_tables);
-
-        for (int i = 0; i < num_tables; i++) {
-            ht_node0_locks[i] = new std::mutex();
-            ht_node1_locks[i] = new std::mutex();
-        }
-    }
-    pthread_barrier_wait(&init_bar);
-
     // ------------------ GLOBAL ALLOCATION (ONCE) ------------------
     if (thread_id == 0) {
-        for (int i = 0; i < num_tables; i++) {
-            if (DS_config == "numa") {
+        if(DS_config == "numa") {
+            //std::cout << "Thread " << thread_id << " initializing NUMA hash tables on Node " << NODE_ZERO << std::endl;
+            ht_node0 = reinterpret_cast<HashTable**>( new numa<HashTable*, NODE_ZERO>[num_tables]);
+            ht_node0_locks.resize(num_tables);
+            for(int i = 0; i < num_tables; i++) {
                 ht_node0[i] = reinterpret_cast<HashTable*>( new numa<HashTable, NODE_ZERO>(buckets));
-                
-            } else {
+                ht_node0_locks[i] = new std::mutex();
+            }
+            //std::cout << "Thread " << thread_id << " finished initializing NUMA hash tables on Node " << NODE_ZERO << std::endl;
+        }
+        else {
+            ht_node0 = reinterpret_cast<HashTable**>( new HashTable*[num_tables]);
+            ht_node0_locks.resize(num_tables);
+            for(int i = 0; i < num_tables; i++) {
                 ht_node0[i] = new HashTable(buckets);
+                ht_node0_locks[i] = new std::mutex();
             }
         }
     }
-    if(thread_id == threads_per_node  && node == 1) {
-        for (int i = 0; i < num_tables; i++) {
-            if (DS_config == "numa") {
-                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, MAX_NODE>(buckets));
+    if (thread_id == threads_per_node +1 && node == 1) {
+        if(DS_config == "numa") {
+            //std::cout << "Thread " << thread_id << " initializing NUMA hash tables on Node " << MAX_NODE<< std::endl;
+            ht_node1 = reinterpret_cast<HashTable**>( new numa<HashTable*, MAX_NODE>[num_tables]);
+            ht_node1_locks.resize(num_tables);
+            for(int i = 0; i < num_tables; i++) {
+                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, MAX_NODE    >(buckets));
+                ht_node1_locks[i] = new std::mutex();
             }
-            else {
-                ht_node1[i] = new HashTable(buckets);
-            }
+            //std::cout << "Thread " << thread_id << " finished initializing NUMA hash tables on Node " << MAX_NODE << std::endl;
         }
+        else {  
+            ht_node1 = reinterpret_cast<HashTable**>( new HashTable*[num_tables]);
+            ht_node1_locks.resize(num_tables);
+            for(int i = 0; i < num_tables; i++) {
+                ht_node1[i] = new HashTable(buckets);
+                ht_node1_locks[i] = new std::mutex();
+            }
+        }   
     }
     pthread_barrier_wait(&init_bar);
-
-
     // ------------------ SANITY CHECK ------------------
     if (thread_id == 0) {
         for (int i = 0; i < num_tables; i++) {
@@ -125,9 +127,8 @@ void numa_hash_table_init(int thread_id,
             }
         }
     }
-
     pthread_barrier_wait(&init_bar);
-
+    return;
     // ------------------ RNG (UNIQUE PER THREAD) ------------------
     std::random_device rd;
     std::mt19937_64 rng(rd() ^ (node << 16) ^ thread_id);
@@ -136,7 +137,7 @@ void numa_hash_table_init(int thread_id,
     long long local_successful_inserts = 0;
     int actual_total_tables = tables_per_node * 2;
     // ------------------ PREFILL LOOP ------------------
-    long long iterations = (num_keys / 2)/ num_total_threads;
+    long long iterations = (num_keys / 2);
 
     for (long long i = 0; i < iterations; ++i) {
         long long key_id = dist(rng); 
@@ -189,29 +190,30 @@ void numa_hash_table_init(int thread_id,
 
 
 void prefill_hash_tables(int num_keys_to_fill, int total_num_tables) {
-    // num_tables from main.cpp is the total number of tables
-    int tables_per_node = total_num_tables / 2;
-    int actual_total_tables = tables_per_node * 2;
-
-    if (actual_total_tables <= 0 || ht_node0.empty() || ht_node1.empty()) {
-        std::cerr << "Prefill Error: Hash tables not initialized or num_tables < 2." << std::endl;
-        return;
-    }
-
-    for (long long i = 0; i < num_keys_to_fill; ++i) {
-        std::string key = "key" + std::to_string(i);
-        
-        // hash into a table
-        unsigned long key_hash = prefill_hash(key.c_str());
-        int table_index = key_hash % actual_total_tables;
-        // insert key i into the table the same way as in ycsb_test
-        if (table_index < tables_per_node) {
-            ht_node0[table_index]->insert(key.c_str());
-        } else {
-            int node1_index = table_index - tables_per_node;
-            ht_node1[node1_index]->insert(key.c_str());
-        }
-    }
+//    // num_tables from main.cpp is the total number of tables
+//    int tables_per_node = total_num_tables / 2;
+//    int actual_total_tables = tables_per_node * 2;
+//
+//    if (actual_total_tables <= 0 || ht_node0.empty() || ht_node1.empty()) {
+//        std::cerr << "Prefill Error: Hash tables not initialized or num_tables < 2." << std::endl;
+//        return;
+//    }
+//
+//    for (long long i = 0; i < num_keys_to_fill; ++i) {
+//        std::string key = "key" + std::to_string(i);
+//        
+//        // hash into a table
+//        unsigned long key_hash = prefill_hash(key.c_str());
+//        int table_index = key_hash % actual_total_tables;
+//        // insert key i into the table the same way as in ycsb_test
+//        if (table_index < tables_per_node) {
+//            ht_node0[table_index]->insert(key.c_str());
+//        } else {
+//            int node1_index = table_index - tables_per_node;
+//            ht_node1[node1_index]->insert(key.c_str());
+//        }
+//    }
+//
 }
 
 void ycsb_test(
