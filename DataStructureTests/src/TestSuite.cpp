@@ -29,55 +29,33 @@
 #define NODE_ZERO 0
 
 #ifndef MAX_NODE
-    #warning "MAX_NODE not defined! Defaulting to 0."
+    #warning "MAX_NODE not defined! Defaulting to 1."
     #define MAX_NODE 1
 #endif
 
 
 using namespace std::chrono;
-std::vector<Stack*> Stacks0;
-std::vector<Stack*> Stacks1;
-// int64_t ops0=0;
-// int64_t ops1=0;
+
+
 int64_t ops0=0;
 int64_t ops1=0;
 
 int sharedCounter = 0;
 
 
-std::vector<mutex*> Stack_lk0;
-std::vector<mutex*> Stack_lk1;
 pthread_barrier_t bar ;
 pthread_barrier_t init_bar;
 
 std::mutex* printLK;
 std::mutex* globalLK;
-
-
-
 std::vector<int64_t> globalOps0;
 std::vector<int64_t> globalOps1;
-
-std::vector<Queue*> Queues0;
-std::vector<Queue*> Queues1;
-std::vector<mutex*> Queue_lk0;
-std::vector<mutex*> Queue_lk1;
-
-
-std::vector<BinarySearchTree*> BSTs0;
-std::vector<BinarySearchTree*> BSTs1;
+BinarySearchTree** BSTs0;
+BinarySearchTree** BSTs1;
 std::vector<mutex*> BST_lk0;
 std::vector<mutex*> BST_lk1;
 std::vector<mutex*> BST_reader_lk0;
 std::vector<mutex*> BST_reader_lk1;
-
-std::vector<LinkedList*> LLs0;
-std::vector<LinkedList*> LLs1;
-std::vector<mutex*> LL_lk0;
-std::vector<mutex*> LL_lk1;
-
-// chrono::high_resolution_clock::time_point startTimer;
-// chrono::high_resolution_clock::time_point endTimer;
 
 
 int checkNUMANode(void* ptr) {
@@ -107,165 +85,78 @@ void global_init(int num_threads, int duration, int interval){
 }
 
 
-void numa_BST_single_init(std::string DS_config, int num_DS, int keyspace, int node, int crossover){
-	BSTs0.resize(num_DS);
-	BSTs1.resize(num_DS);
-	BST_lk0.resize(BSTs0.size());
-	BST_lk1.resize(BSTs1.size());
-
-	std::mt19937 gen(123);
-	std::uniform_int_distribution<> xDist(1, 100);
-	std::uniform_int_distribution<> dist(0, keyspace/2);
-	for(int i = 0; i < num_DS; i++)
-	{
-		int x = xDist(gen);
-		
-		if(DS_config=="numa"){
-			BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
-			BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
-		}
-		else{
-			BSTs0[i] = new BinarySearchTree();
-			BSTs1[i] = new BinarySearchTree();
-		}
-	}
-
-	
-	for(int i = 0; i < num_DS; i++)
-	{
-		BST_lk0[i] = new mutex();
-		BST_lk1[i] = new mutex();
-	}	
-
-	
-	for(int i = 0; i < num_DS/2 ; i++)
-	{
-		for(int j=0; j < keyspace/2; j++)
-		{
-			BSTs0[i]->insert(dist(gen));
-			BSTs1[i]->insert(dist(gen));
-		}
-	}	
-
-}
 
 void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, int crossover){
 	pthread_barrier_wait(&init_bar);
 	crossover = -1;
 	//std::cout<<"crossover value from here is "<<crossover<<std::endl;
-	if(node==0 ){
-		BSTs0.resize(num_DS);
-		BSTs1.resize(num_DS);
-		BST_lk0.resize(BSTs0.size());
-		BST_lk1.resize(BSTs1.size());
-		BST_reader_lk0.resize(BSTs0.size());
-		BST_reader_lk1.resize(BSTs1.size());
-	}
-	pthread_barrier_wait(&init_bar);
 	std::mt19937 gen(123);
 	std::uniform_int_distribution<> xDist(1, 100);
 	std::uniform_int_distribution<> dist(0, keyspace);
 	if(node == 0){
-		for(int i = 0; i < num_DS; i++)
-		{
-			int x = xDist(gen);
-			if(x <= crossover){
-				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
-				}
-				else{
-					BSTs1[i] = new BinarySearchTree();
-				}
-			}else{
-				if(DS_config=="numa"){
-					BSTs0[i] =reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
-				}
-				else{
-					BSTs0[i] = new BinarySearchTree();
-				}
+        if(DS_config=="numa"){
+            BSTs0 = reinterpret_cast<BinarySearchTree**>(new numa<BinarySearchTree*,NODE_ZERO>[num_DS]);
+            BST_lk0.resize(num_DS);
+            BST_reader_lk0.resize(num_DS);
+            for(int i= 0; i < num_DS; i++){
+                BSTs0[i]= reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,NODE_ZERO>());
+                BST_lk0[i]= new mutex();
+                BST_reader_lk0[i]= new mutex();
+            }
+            std::cout<<"Thread with node "<< node<< "finished initializing on node "<<NODE_ZERO<<"\n";
+
+        }else{
+            BSTs0 = new BinarySearchTree*[num_DS];
+            BST_lk0.resize(num_DS);
+            BST_reader_lk0.resize(num_DS);
+            for(int i= 0; i < num_DS; i++){
+                BSTs0[i]= new BinarySearchTree();
+                BST_lk0[i]= new mutex();
+                BST_reader_lk0[i]= new mutex(); 
+            }
+        }
+        for(int i = 0; i < keyspace/2 ; i++){	
+			for(int j=0; j < num_DS; j++){
+				BSTs0[j]->insert(dist(gen));
 			}
 		}
+         std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
 
-		
-		for(int i = 0; i < num_DS; i++)
-		{
-			int x = xDist(gen);
-			if(x<=crossover){
-				BST_lk1[i] = new mutex();
-				BST_reader_lk1[i] = new mutex();
-			}else{
-				BST_lk0[i] = new mutex();
-				BST_reader_lk0[i] = new mutex();
+    }
+    else{
+        if(DS_config=="numa"){
+            BSTs1= reinterpret_cast<BinarySearchTree**>(new numa<BinarySearchTree*,MAX_NODE>[num_DS]);
+            BST_lk1.resize(num_DS);
+            BST_reader_lk1.resize(num_DS);
+            for(int i= 0; i < num_DS; i++){
+                BSTs1[i]= reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
+                BST_lk1[i]= new mutex();
+                BST_reader_lk1[i]= new mutex();
+            }  
+            std::cout<<"Thread with node "<< node<< "finished initializing on node "<<MAX_NODE<<"\n";
+
+        }else{
+            BSTs1 = new BinarySearchTree*[num_DS];
+            BST_lk1.resize(num_DS);
+            BST_reader_lk1.resize(num_DS);
+            for(int i= 0; i < num_DS; i++){
+                BSTs1[i]= new BinarySearchTree();
+                BST_lk1[i]= new mutex();
+                BST_reader_lk1[i]= new mutex(); 
+            }
+
+        }
+              for(int i = 0; i < keyspace/2 ; i++){	
+			for(int j=0; j < num_DS; j++){
+				BSTs1[j]->insert(dist(gen));
 			}
 		}
+        std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
 
-		for(int i = 0; i < keyspace/2 ; i++)
-		{	
-			int x = xDist(gen);
-			if(x <= crossover){
-				for(int j=0; j < num_DS; j++){
-					BSTs1[j]->insert(dist(gen));
-				}
-			}else{
-				for(int j=0; j < num_DS; j++){
-					BSTs0[j]->insert(dist(gen));
-				}
-			}
-		}
-	}
-
-	if(node == 1){
-		
-		for(int i = 0; i < num_DS; i++)
-		{
-			int x = xDist(gen);
-			if(x <= crossover){
-				if(DS_config=="numa"){
-					BSTs0[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree, NODE_ZERO>());
-				}
-				else{
-					BSTs0[i] = new BinarySearchTree();
-				}
-			}else{
-				if(DS_config=="numa"){
-					BSTs1[i] = reinterpret_cast<BinarySearchTree*>(new numa<BinarySearchTree,MAX_NODE>());
-				}
-				else{
-					BSTs1[i] = new BinarySearchTree();
-				}
-			}
-		}
-
-		for(int i = 0; i < num_DS; i++)
-		{	
-			int x = xDist(gen);
-			if(x<=crossover){
-				BST_lk0[i] = new mutex();
-			}else{
-				BST_lk1[i] = new mutex();
-			}
-		}	
-		
-		for(int i = 0; i < keyspace/2 ; i++)
-		{
-			int x = xDist(gen);
-			if(x <= crossover){
-				for(int j=0; j < num_DS; j++){
-					BSTs0[j]->insert(dist(gen));
-				}
-			}else{
-				for(int j=0; j < num_DS; j++){
-					BSTs1[j]->insert(dist(gen));
-				}
-			}
-		}
-	}
-
-	pthread_barrier_wait(&init_bar);
-	
-	//std::cout<<"BSTs initialized"<<std::endl<<std::endl<<std::endl<<std::endl;
-
+    }
+    pthread_barrier_wait(&init_bar);
 }
+	
 
 void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_threads, int crossover, int keyspace, int interval)
 {	
@@ -279,7 +170,7 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 	pthread_barrier_wait(&bar);
 	//std::cout<<"crossover value from test is "<<crossover<<std::endl;
 	std::mt19937 gen(tid);
-	std::uniform_int_distribution<> dist(0, BSTs0.size()-1);
+	std::uniform_int_distribution<> dist(0, num_DS-1);
 	std::uniform_int_distribution<> opDist(1, 100);
 	std::uniform_int_distribution<> xDist(1, 100);
 	std::uniform_int_distribution<> keyDist(0,keyspace);

@@ -176,7 +176,7 @@ void RecursiveNumaTyper::start()
         if(const RecordType* RT = TemplateArgs[0].getAsType()->getAs<RecordType>()){
             if (CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RT->getDecl())) {
                 FirstTempArg = CXXRD;
-                SecondTempArg = TemplateArgs[1].getAsIntegral().getExtValue();
+                SecondTempArg = TemplateArgs[1].getAsIntegral();
                 specializeClass(context,FirstTempArg,SecondTempArg);
             }
         }
@@ -192,7 +192,7 @@ void RecursiveNumaTyper::start()
         if(const RecordType* RT = TemplateArgs[0].getAsType()->getAs<RecordType>()){
             if (CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RT->getDecl())) {
                 FirstTempArg = CXXRD;
-                SecondTempArg = TemplateArgs[1].getAsIntegral().getExtValue();
+                SecondTempArg = TemplateArgs[1].getAsIntegral();
                 specializeClass(context,FirstTempArg,SecondTempArg);
             }
         }

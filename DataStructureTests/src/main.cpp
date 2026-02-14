@@ -24,7 +24,7 @@ using namespace std;
 
 #define NODE_ZERO 0
 #ifndef MAX_NODE
-    #warning "MAX_NODE_ID not defined! Defaulting to 0."
+    #warning "MAX_NODE_ID not defined! Defaulting to 1."
     #define MAX_NODE 1
 #endif
 
