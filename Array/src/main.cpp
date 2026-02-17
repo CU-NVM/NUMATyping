@@ -26,7 +26,7 @@ using namespace std;
 
 #define NODE_ZERO 0
 #ifndef MAX_NODE
-    #warning "MAX_NODE_ID not defined! Defaulting to 0."
+    #warning "MAX_NODE_ID not defined! Defaulting to 1."
     #define MAX_NODE 1
 #endif
 
@@ -48,9 +48,8 @@ vector<thread*> regular_thread0;
 vector<thread*> regular_thread1;
 vector<thread_numa<NODE_ZERO>*> init_thread0;
 vector<thread_numa<MAX_NODE>*> init_thread1;
-std::thread* init_thread_regular0;
-std::thread* init_thread_regular1;
-
+thread_numa<NODE_ZERO>* one_init_thread0;
+thread_numa<MAX_NODE>* one_init_thread1;
 
 
 extern int64_t ops0;
@@ -71,32 +70,34 @@ void spawn_threads(){
 	init_thread0.assign(num_threads/2, nullptr);
 	init_thread1.assign(num_threads/2, nullptr);
     global_init(num_threads, duration, interval);
-	//Initialization
-	for(int i=0; i< num_threads/2; ++i){   
-        int thread_id = i;
-		int numa_node = 0;
-		if(thread_config == "reverse"){
-			init_thread0[i] = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, 1, num_arrays/2);
-		}else{
-			init_thread0[i] = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
-		}
-	}
-    for(int i=0; i< num_threads/2; ++i){   
-		int thread_id = i + num_threads/2;
-		int numa_node = 1;
-		if(thread_config == "reverse"){
-			init_thread1[i] = new thread_numa<MAX_NODE>(numa_array_init, thread_id , num_threads, DS_config, array_size, 0, num_arrays/2);
-		}else{
-			init_thread1[i] = new thread_numa<MAX_NODE>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
-		}
-	}
+    
+    one_init_thread0 = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, 0, num_arrays/2);
+    one_init_thread1 = new thread_numa<MAX_NODE>(numa_array_init, thread_id , num_threads, DS_config, array_size, 1, num_arrays/2);
 
-    for(auto th : init_thread0) th->join();
-    for(auto th : init_thread1) th->join();
-    for(auto th : init_thread0) delete th;
-    for(auto th : init_thread1) delete th;
 
-    return ;
+    if(one_init_thread0) one_init_thread0->join();
+    if(one_init_thread1) one_init_thread1->join();
+
+
+
+//	//Initialization
+//	for(int i=0; i< 1; ++i){   
+//        int thread_id = i;
+//		int numa_node = 0;
+//			init_thread0[i] = new thread_numa<NODE_ZERO>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
+//	}
+//    for(int i=0; i< 1; ++i){   
+//		int thread_id = i + num_threads/2;
+//		int numa_node = 1;
+//			init_thread1[i] = new thread_numa<MAX_NODE>(numa_array_init, thread_id , num_threads, DS_config, array_size, numa_node, num_arrays/2);
+//	}
+//
+//    for(auto th : init_thread0) th->join();
+//    for(auto th : init_thread1) th->join();
+//    for(auto th : init_thread0) delete th;
+//    for(auto th : init_thread1) delete th;
+//
+    
 	// ------------------ TEST SPAWNING ------------------
 
 	//Test
@@ -110,7 +111,7 @@ void spawn_threads(){
 			regular_thread0[i] = new thread(array_test, tid, duration, DS_config, node, num_threads/2, array_size, num_arrays/2, interval);
 		}
 		else{
-			numa_thread0[i] = new thread_numa<NODE_ZERO>(array_test, tid, duration, DS_config, 0, num_threads/2, array_size, num_arrays/2, interval);
+			numa_thread0[i] = new thread_numa<NODE_ZERO>(array_test, tid, duration, DS_config, 1, num_threads/2, array_size, num_arrays/2, interval);
 		}
 	}
 
@@ -124,7 +125,7 @@ void spawn_threads(){
 			regular_thread1[i] = new thread(array_test, tid, duration, DS_config, node, num_threads/2, array_size, num_arrays/2, interval);
 		}
 		else{
-			numa_thread1[i] = new thread_numa<MAX_NODE>(array_test, tid, duration, DS_config, 1, num_threads/2, array_size, num_arrays/2, interval);
+			numa_thread1[i] = new thread_numa<MAX_NODE>(array_test, tid, duration, DS_config, 0, num_threads/2, array_size, num_arrays/2, interval);
 		}
 	}
 

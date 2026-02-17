@@ -23,7 +23,7 @@ using namespace std::chrono;
 
 #define NODE_ZERO 0
 #ifndef MAX_NODE 
-	#warning "MAX_NODE_ID not defined! Defaulting to 0."
+	#warning "MAX_NODE_ID not defined! Defaulting to 1."
 	#define MAX_NODE 1
 #endif
 
@@ -49,7 +49,7 @@ pthread_barrier_t init_bar;
 
 void global_init(int num_threads, int duration, int interval) {
 	pthread_barrier_init(&bar, NULL, num_threads);
-	pthread_barrier_init(&init_bar, NULL, num_threads);
+	pthread_barrier_init(&init_bar, NULL, 2);
 	globalOps0.resize(duration/interval);
 	globalOps1.resize(duration/interval);
 	ops0 = 0;
@@ -63,22 +63,13 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
 {
     int threads_per_node = num_total_threads / 2;
 
-    // ------------------ GLOBAL RESIZE (ONCE) ------------------
-    if (thread_id == 0) {
-        array_node0.resize(num_arrays);
-        array_node1.resize(num_arrays);
-        
-        array_node0_locks.resize(num_arrays);
-        array_node1_locks.resize(num_arrays); 
-        for (int i = 0; i < num_arrays; i++) {
-            array_node0_locks[i] = new std::mutex();
-            array_node1_locks[i] = new std::mutex();
-        }
-    }
+ 
     pthread_barrier_wait(&init_bar);
 
     // ------------------ GLOBAL ALLOCATION (ONCE) ------------------
-    if(node == 0 && thread_id % threads_per_node == 0) {
+    if(node == 0) {
+        array_node0.resize(num_arrays);
+        array_node0_locks.resize(num_arrays);  
         for (int i = 0; i < num_arrays; i++) {
             if (DS_config != "regular") {
                 array_node0[i] = reinterpret_cast<char**> (new numa<char*, NODE_ZERO>[array_size]);
@@ -87,33 +78,44 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
                 array_node0[i] = new char*[array_size];
             }
         }
-    }
-   else if (node == 1 && thread_id % threads_per_node == 0) {
         for (int i = 0; i < num_arrays; i++) {
+            array_node0_locks[i] = new std::mutex();
+        }
+     std::cout<<"Thread "<< thread_id << "from node "<< node<< " done initializing on actual node " << NODE_ZERO<<"\n";
+    }
+   else if (node == 1) {
+        array_node1.resize(num_arrays);
+       array_node1_locks.resize(num_arrays);
+       for (int i = 0; i < num_arrays; i++) {
             if (DS_config != "regular") {
                 array_node1[i] = reinterpret_cast<char**> (new numa<char*, MAX_NODE>[array_size]);
             }
             else if(DS_config == "regular"){
                 array_node1[i] = new char*[array_size];
             }
-        }
+       }
+       for (int i = 0; i < num_arrays; i++) {
+            array_node1_locks[i] = new std::mutex();
+       }
+       std::cout<<"Thread "<< thread_id << "from node "<< node<< " done initializing on actual node " << MAX_NODE <<"\n";
     }
     pthread_barrier_wait(&init_bar);
-
+   
 
     // ------------------ SANITY CHECK ------------------
-    if (thread_id == 0) {
-        for (int i = 0; i < num_arrays; i++) {
-            if (array_node0[i] == nullptr || array_node1[i] == nullptr || array_node0_locks[i] == nullptr || array_node1_locks[i] == nullptr) {
-                std::cerr << "Hash table allocation error!" << std::endl;
-                return;
-            }
-        }
-    }
+   // if (node == 0) {
+   //     for (int i = 0; i < num_arrays; i++) {
+   //         if (array_node0[i] == nullptr || array_node1[i] == nullptr || array_node0_locks[i] == nullptr || array_node1_locks[i] == nullptr) {
+   //             std::cerr << "Hash table allocation error!" << std::endl;
+   //             return;
+   //         }
+   //     }
+   // }
     pthread_barrier_wait(&init_bar);
+   
     //random number generator for keys
     std::mt19937 rng(static_cast<unsigned int>(time(nullptr)) + thread_id);
-    std::uniform_int_distribution<int> key_dist(1, array_size*10);
+    std::uniform_int_distribution<int> key_dist(1, array_size/(100000));
 
     int local_thread_id = thread_id % threads_per_node;
     long long chunk = num_arrays / threads_per_node;
@@ -122,6 +124,46 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
     int64_t iterations = array_size;
     char* word;
     const char* letters;
+
+
+    for(long long i=0; i < num_arrays; i++){
+        for(long long j=0 ; j < array_size/2; ++j){
+             if (node == 0 ) {
+                if(DS_config == "regular"){
+                    std::string temp = "key" + std::to_string(key_dist(rng));
+                    letters= temp.c_str();
+                    word = new char[strlen(letters) + 1];
+                }
+                else {
+                    std::string temp = "key" + std::to_string(key_dist(rng));
+                    letters= temp.c_str();
+                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,0>[strlen(letters) + 1]));
+                    // word = new char[strlen(letters) + 1];
+
+                }
+                array_node0[i][j] = word;
+            } else if (node == 1 ) {
+                if(DS_config == "regular"){
+                    std::string temp = "key" + std::to_string(key_dist(rng));
+                    letters= temp.c_str();
+                    word = new char[strlen(letters) + 1];
+                }
+                else {
+                    std::string temp = "key" + std::to_string(key_dist(rng));
+                    letters= temp.c_str();
+                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,MAX_NODE>[strlen(letters) + 1]));
+                    //word = new char[strlen(letters) + 1];
+
+                }
+                array_node1[i][j] = word;
+            }
+        }
+    }
+    std::cout<<"Thread "<< thread_id << "from node "<< node<< " done prefilling  on actual node " << MAX_NODE <<"\n";
+    std::cout<<"Thread "<< thread_id << "from node "<< node<< " done prefilling on actual node " << MAX_NODE <<"\n";
+
+    pthread_barrier_wait(&init_bar);
+    return;
 
     for(long long i=start; i < end; ++i){
         for (long long j = 0; j < iterations; ++j) {
@@ -173,7 +215,7 @@ void array_test(int tid, int duration, std::string DS_config, int node, int num_
     std::mt19937_64 rng(tid);
     std::uniform_int_distribution<long long> op_dist(1, 100);
     std::uniform_int_distribution<long long> array_dist(0, num_arrays - 1);
-    std::uniform_int_distribution<long long> word_dist(0, array_size - 1);
+    std::uniform_int_distribution<long long> word_dist(0, array_size/100000);
 
     const char* letters;
     char* word;
@@ -221,7 +263,7 @@ void array_test(int tid, int duration, std::string DS_config, int node, int num_
                 char* new_word;
 
                 if (DS_config != "regular") {
-                    new_word = reinterpret_cast<char*>(new numa<char, 1>[len]);
+                    new_word = reinterpret_cast<char*>(new numa<char, MAX_NODE>[len]);
                 } else {
                     new_word = new char[len];
                 }
