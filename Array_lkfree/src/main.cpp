@@ -191,18 +191,10 @@ int main(int argc, char *argv[])
 	
     // --- REPORTING PHASE ---
     size_t num_intervals = get_num_intervals();
-	if(interval > 0){
-		for(int i=0; i < num_intervals; i++){
-			int time_window = (i+1) * interval;
-			int64_t ops0 = get_ops(0,i);
-			int64_t ops1 = get_ops(1,i);
-			print_result(time_window, ops0, ops1);
-		}
-    }
-	else{
 		int64_t ops0 = get_ops(0, 0);
 		int64_t ops1 = get_ops(1, 0);
 		print_result(duration, ops0, ops1);
-	}
+
+
     return 0;
 }

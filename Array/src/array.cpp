@@ -1,310 +1,200 @@
 #include "Array.h"
 #include "numatype.hpp"
 #include <iostream>
-#include <sstream>
 #include <chrono>
 #include <vector>
 #include <random>
 #include <string>
 #include <thread>
-#include <stdexcept>
-#include <functional>
-#include "numathreads.hpp"
-#include <pthread.h>
-#include <mutex>
-#include <syncstream>
-#include <cstdlib>
+#include <atomic> // REQUIRED for Zero-Contention
 #include <cstring>
-#include <map>
-#include <atomic>
+#include <cstdio> 
+#include <algorithm> 
+#include <shared_mutex>
 
 using namespace std;
 using namespace std::chrono;
 
 #define NODE_ZERO 0
 #ifndef MAX_NODE 
-	#warning "MAX_NODE_ID not defined! Defaulting to 1."
-	#define MAX_NODE 1
+    #warning "MAX_NODE_ID not defined! Defaulting to 1."
+    #define MAX_NODE 1
 #endif
 
+static char** array_node0;
+static char** array_node1;
 
-int global_successful_inserts;
-int global_successful_init_inserts;
-std::vector<char**> array_node0;
-std::vector<char**> array_node1;
-std::vector<std::mutex*> array_node0_locks;
-std::vector<std::mutex*> array_node1_locks;
+static std::mutex* globalLK = nullptr;
+static pthread_barrier_t bar;
+static pthread_barrier_t init_bar;
 
-std::mutex* printLK;
-std::mutex* globalLK;
+static std::vector<int64_t> globalOps0;
+static std::vector<int64_t> globalOps1;
 
-std::vector<int64_t> globalOps0;
-std::vector<int64_t> globalOps1;
-int64_t ops0=0;
-int64_t ops1=0;
-pthread_barrier_t bar;
-pthread_barrier_t init_bar;
-
-
+static std::shared_mutex* read_lk0;
+static std::shared_mutex* read_lk1;
 
 void global_init(int num_threads, int duration, int interval) {
-	pthread_barrier_init(&bar, NULL, num_threads);
-	pthread_barrier_init(&init_bar, NULL, 2);
-	globalOps0.resize(duration/interval);
-	globalOps1.resize(duration/interval);
-	ops0 = 0;
-	ops1 = 0;
-	printLK = new std::mutex();
-	globalLK = new std::mutex();
-    global_successful_init_inserts=0;
-    global_successful_inserts=0;
+    pthread_barrier_init(&bar, NULL, num_threads);
+    pthread_barrier_init(&init_bar, NULL, 2);
+    read_lk0 = new std::shared_mutex();
+    read_lk1 = new std::shared_mutex();
+    if (globalLK) delete globalLK;
+    globalLK = new std::mutex();
 }
-void numa_array_init(int thread_id, int num_total_threads, std::string DS_config, int64_t array_size, int node, int num_arrays)
+
+size_t get_num_intervals() {
+    return globalOps0.size();
+}
+
+int64_t get_ops(int node_id, size_t interval_idx) {
+    if (node_id == 0) {
+        if (interval_idx < globalOps0.size()) return globalOps0[interval_idx];
+    } else {
+        if (interval_idx < globalOps1.size()) return globalOps1[interval_idx];
+    }
+    return 0;
+}
+
+
+void numa_array_init(int thread_id, int num_total_threads, std::string DS_config, int64_t array_size, int node, int num_arrays, int duration, int interval)
 {
-    int threads_per_node = num_total_threads / 2;
-
- 
-    pthread_barrier_wait(&init_bar);
-
-    // ------------------ GLOBAL ALLOCATION (ONCE) ------------------
-    if(node == 0) {
-        array_node0.resize(num_arrays);
-        array_node0_locks.resize(num_arrays);  
-        for (int i = 0; i < num_arrays; i++) {
-            if (DS_config != "regular") {
-                array_node0[i] = reinterpret_cast<char**> (new numa<char*, NODE_ZERO>[array_size]);
-                
-            } else if(DS_config == "regular"){
-                array_node0[i] = new char*[array_size];
-            }
-        }
-        for (int i = 0; i < num_arrays; i++) {
-            array_node0_locks[i] = new std::mutex();
-        }
-     std::cout<<"Thread "<< thread_id << "from node "<< node<< " done initializing on actual node " << NODE_ZERO<<"\n";
+    // --- 1. SETUP PHASE ---
+    size_t num_intervals = (interval > 0) ? (duration / interval) : 1;
+    if (node == 0) {
+        globalOps0.assign(num_intervals, 0);
+    } else {
+        globalOps1.assign(num_intervals, 0);
     }
-   else if (node == 1) {
-        array_node1.resize(num_arrays);
-       array_node1_locks.resize(num_arrays);
-       for (int i = 0; i < num_arrays; i++) {
-            if (DS_config != "regular") {
-                array_node1[i] = reinterpret_cast<char**> (new numa<char*, MAX_NODE>[array_size]);
-            }
-            else if(DS_config == "regular"){
-                array_node1[i] = new char*[array_size];
-            }
-       }
-       for (int i = 0; i < num_arrays; i++) {
-            array_node1_locks[i] = new std::mutex();
-       }
-       std::cout<<"Thread "<< thread_id << "from node "<< node<< " done initializing on actual node " << MAX_NODE <<"\n";
-    }
-    pthread_barrier_wait(&init_bar);
-   
 
-    // ------------------ SANITY CHECK ------------------
-   // if (node == 0) {
-   //     for (int i = 0; i < num_arrays; i++) {
-   //         if (array_node0[i] == nullptr || array_node1[i] == nullptr || array_node0_locks[i] == nullptr || array_node1_locks[i] == nullptr) {
-   //             std::cerr << "Hash table allocation error!" << std::endl;
-   //             return;
-   //         }
-   //     }
-   // }
     pthread_barrier_wait(&init_bar);
-   
-    //random number generator for keys
+
+    // --- 2. ALLOCATION PHASE ---
+
+    if (DS_config == "regular") {
+        if(node == 0)
+            array_node0 = new char*[array_size];
+        else
+            array_node1 = new char*[array_size];
+    } else {
+        if (node == 0)
+            array_node0 = reinterpret_cast<char**>(new numa<char*, NODE_ZERO>[array_size]);
+        else
+            array_node1 = reinterpret_cast<char**>(new numa<char*, MAX_NODE>[array_size]);
+    }
+
+    
+    pthread_barrier_wait(&init_bar);
+
+    // --- 3. pre-fill phase ---
     std::mt19937 rng(static_cast<unsigned int>(time(nullptr)) + thread_id);
-    std::uniform_int_distribution<int> key_dist(1, array_size/(100000));
-
-    int local_thread_id = thread_id % threads_per_node;
-    long long chunk = num_arrays / threads_per_node;
-    long long start = local_thread_id * chunk;
-    long long end = (local_thread_id == threads_per_node - 1) ? num_arrays : start + chunk;
-    int64_t iterations = array_size;
-    char* word;
-    const char* letters;
-
-
-    for(long long i=0; i < num_arrays; i++){
-        for(long long j=0 ; j < array_size/2; ++j){
-             if (node == 0 ) {
-                if(DS_config == "regular"){
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = new char[strlen(letters) + 1];
-                }
-                else {
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,0>[strlen(letters) + 1]));
-                    // word = new char[strlen(letters) + 1];
-
-                }
-                array_node0[i][j] = word;
-            } else if (node == 1 ) {
-                if(DS_config == "regular"){
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = new char[strlen(letters) + 1];
-                }
-                else {
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,MAX_NODE>[strlen(letters) + 1]));
-                    //word = new char[strlen(letters) + 1];
-
-                }
-                array_node1[i][j] = word;
-            }
-        }
-    }
-    std::cout<<"Thread "<< thread_id << "from node "<< node<< " done prefilling  on actual node " << MAX_NODE <<"\n";
-    std::cout<<"Thread "<< thread_id << "from node "<< node<< " done prefilling on actual node " << MAX_NODE <<"\n";
-
-    pthread_barrier_wait(&init_bar);
-    return;
-
-    for(long long i=start; i < end; ++i){
-        for (long long j = 0; j < iterations; ++j) {
-            if (node == 0) {
-                if(DS_config == "regular"){
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = new char[strlen(letters) + 1];
-                }
-                else {
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,0>[strlen(letters) + 1]));
-                }
-                array_node0[i][j] = word;
-            } else if (node == 1) {
-                if(DS_config == "regular"){
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = new char[strlen(letters) + 1];
-                }
-                else {
-                    std::string temp = "key" + std::to_string(key_dist(rng));
-                    letters= temp.c_str();
-                    word = reinterpret_cast<char *>(reinterpret_cast<char *>(new numa<char,MAX_NODE>[strlen(letters) + 1]));
-                }
-                array_node1[i][j] = word;
-            }
-        }
-    }
+    std::uniform_int_distribution<int64_t> key_dist(1, array_size-1);
+    for(int64_t j = 0; j < array_size; ++j){    
+		int64_t next_hop = key_dist(rng);      
+        char* fake_ptr = reinterpret_cast<char*>(next_hop);
+        if(node == 0) array_node0[j]=fake_ptr;
+       	else array_node1[j]=fake_ptr;
+ 	}
     pthread_barrier_wait(&init_bar);
 }
 
-
-void array_test(int tid, int duration, std::string DS_config, int node, int num_threads,  int64_t array_size, int num_arrays, int interval)
+void array_test(int tid, int duration, std::string DS_config, int node, int num_threads, int64_t array_size, int num_arrays, int interval)
 {
+    pthread_barrier_wait(&bar);
+
+    int64_t ops = 0;
+    
+    // Interval Setup
+    size_t num_intervals = (interval > 0) ? (duration / interval) : 1;
+    std::vector<int64_t> local_interval_ops(num_intervals, 0);
+    auto startTimer = std::chrono::steady_clock::now();
+    auto endTimer = startTimer + std::chrono::seconds(duration);
+    auto nextIntervalTime = startTimer + std::chrono::seconds(interval > 0 ? interval : duration);
    
-	pthread_barrier_wait(&bar);
+	int interval_idx = 0;
+	int64_t last_snapshot_ops = 0;
 
-	int64_t ops = 0;
-	thread_local vector<int64_t> localOps;
-	localOps.resize(duration/interval);
-	auto startTimer = std::chrono::steady_clock::now();
-	auto endTimer = startTimer + std::chrono::seconds(duration);
-    auto nextLogTime = startTimer + std::chrono::seconds(interval);
-	int intervalIdx = 0;
-
-    std::random_device rd;
     std::mt19937_64 rng(tid);
     std::uniform_int_distribution<long long> op_dist(1, 100);
     std::uniform_int_distribution<long long> array_dist(0, num_arrays - 1);
-    std::uniform_int_distribution<long long> word_dist(0, array_size/100000);
+    std::uniform_int_distribution<long long> word_dist(0, array_size - 1);
 
-    const char* letters;
-    char* word;
-    while (duration_cast<seconds>(steady_clock::now() - startTimer).count() < duration) {
+    int64_t curr_idx = word_dist(rng);
+    volatile char* word;
+    while (true) {
         int array_choice = array_dist(rng);
         int word_choice = word_dist(rng);
         int op_choice = op_dist(rng);
 
-        if (node == 0) {
-            if (op_choice <= 80) {
-                array_node0_locks[array_choice]->lock();
-                word = array_node0[array_choice][word_choice];
-                array_node0_locks[array_choice]->unlock();
-            } 
-            else {
-                // 1. Prepare the new string OUTSIDE the lock to keep the critical section small
-                std::string temp = "key" + std::to_string(word_dist(rng));
-                const char* letters = temp.c_str();
-                size_t len = strlen(letters) + 1;
-                char* new_word;
-
-                if (DS_config != "regular") {
-                    new_word = reinterpret_cast<char*>(new numa<char, 0>[len]);
-                } else {
-                    new_word = new char[len];
-                }
-                std::strcpy(new_word, letters);
-
-                // 2. Lock, swap pointers, and capture the old one
-                array_node0_locks[array_choice]->lock();
-                array_node0[array_choice][word_choice] = new_word;      // Update with new pointer
-                array_node0_locks[array_choice]->unlock();
-            }
-        } else {
-            if (op_choice <= 80) {
-                array_node1_locks[array_choice]->lock();
-                word = array_node1[array_choice][word_choice];
-                array_node1_locks[array_choice]->unlock();
-            } 
-            else{
-                // 1. Prepare the new string OUTSIDE the lock to keep the critical section small
-                std::string temp = "key" + std::to_string(word_dist(rng));
-                const char* letters = temp.c_str();
-                size_t len = strlen(letters) + 1;
-                char* new_word;
-
-                if (DS_config != "regular") {
-                    new_word = reinterpret_cast<char*>(new numa<char, MAX_NODE>[len]);
-                } else {
-                    new_word = new char[len];
-                }
-                std::strcpy(new_word, letters);
-
-                // 2. Lock, swap pointers, and capture the old one
-    
-                array_node1_locks[array_choice]->lock();
-                array_node1[array_choice][word_choice] = new_word;      // Update with new pointer
-                array_node1_locks[array_choice]->unlock();
-            }
+        if(node == 0){
+            read_lk0->lock_shared();
+            word = array_node0[curr_idx];
+            read_lk0->unlock_shared();
+        }
+        else{
+            read_lk1->lock_shared();
+            word = array_node1[curr_idx];
+            read_lk1->unlock_shared();
         }
 
-
+        int64_t next_idx = reinterpret_cast<int64_t>(word); // Use the content to determine next index (introduces data dependency)
+        curr_idx = (next_idx+word_dist(rng)) % array_size; // Add some randomness to the next index to prevent simple sequential access patterns
+       
         ops++;
-        if(std::chrono::steady_clock::now() >= nextLogTime){
-            localOps[intervalIdx] = ops;
-            intervalIdx++;
-            nextLogTime += std::chrono::seconds(interval);
+		
+     	if (interval > 0) {
+        	auto now = std::chrono::steady_clock::now();
+            if (now >= nextIntervalTime && interval_idx <num_intervals){
+                local_interval_ops[interval_idx] = ops;
+                last_snapshot_ops = ops;
+                nextIntervalTime += std::chrono::seconds(interval);
+                interval_idx++;
+            }
+ 			if((ops % 1024) == 0){
+            	auto now = std::chrono::steady_clock::now();
+           	 	if(now >= endTimer){
+                	local_interval_ops[interval_idx] = ops;
+                	break;
+           		} 
+        	}
         }
+ 
+        if((ops % 1024) == 0){
+            auto now = std::chrono::steady_clock::now();
+            if(now >= endTimer){
+                local_interval_ops[0] = ops;
+                break;
+            } 
+        } 
     }
+    
+    // Capture remaining ops
+    if (interval > 0 && interval_idx < num_intervals) local_interval_ops[interval_idx] = ops;
+    else if (interval == 0) local_interval_ops[0] = ops;
 
 
     pthread_barrier_wait(&bar);   
 
-
+    // Aggregate
     globalLK->lock();
-    if(node==0)
-    {
-        for(int i=0; i<localOps.size(); i++){
-            globalOps0[i] += localOps[i];
-        }
+   	if(node == 0) {
+		if(interval==0){
+			globalOps0[0] += local_interval_ops[0];		
+ 		}else {
+			for(size_t i=0; i<local_interval_ops.size(); i++) {
+        		globalOps0[i] += local_interval_ops[i];
+			}
+		}
+    }else {
+		if(interval==0){
+			globalOps1[0] += local_interval_ops[0];		
+ 		}else {
+			for(size_t i=0; i<local_interval_ops.size(); i++) {
+        		globalOps1[i] += local_interval_ops[i];
+			}
+		}
     }
-    else
-    {
-        for(int i=0; i<localOps.size(); i++){
-            globalOps1[i] += localOps[i];
-        }
-    }
-    globalLK->unlock();
-
+    
+	globalLK->unlock();
     pthread_barrier_wait(&bar);
-
 }
