@@ -64,3 +64,4 @@ public:
 };
 
 #endif /* _BINARYNODE_HPP_ */
+

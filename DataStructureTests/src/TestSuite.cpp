@@ -1,5 +1,4 @@
-/*! \file TestSuite.cpp
- * \brief Testsuite implementation which allows for testing of various data structures
+/*Testsuite implementation which allows for testing of various data structures
  * \author Nii Mante
  * \date 10/28/2012
  *
@@ -103,7 +102,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
                 BST_lk0[i]= new mutex();
                 BST_reader_lk0[i]= new mutex();
             }
-            std::cout<<"Thread with node "<< node<< "finished initializing on node "<<NODE_ZERO<<"\n";
+            //std::cout<<"Thread with node "<< node<< "finished initializing on node "<<NODE_ZERO<<"\n";
 
         }else{
             BSTs0 = new BinarySearchTree*[num_DS];
@@ -120,7 +119,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				BSTs0[j]->insert(dist(gen));
 			}
 		}
-         std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
+         //std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
 
     }
     else{
@@ -133,7 +132,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
                 BST_lk1[i]= new mutex();
                 BST_reader_lk1[i]= new mutex();
             }  
-            std::cout<<"Thread with node "<< node<< "finished initializing on node "<<MAX_NODE<<"\n";
+            //std::cout<<"Thread with node "<< node<< "finished initializing on node "<<MAX_NODE<<"\n";
 
         }else{
             BSTs1 = new BinarySearchTree*[num_DS];
@@ -151,7 +150,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				BSTs1[j]->insert(dist(gen));
 			}
 		}
-        std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
+        //std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
 
     }
     pthread_barrier_wait(&init_bar);
@@ -184,7 +183,7 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
     auto nextLogTime = startTimer + std::chrono::seconds(interval);
 	int intervalIdx = 0;
 
-	while (duration_cast<seconds>(steady_clock::now() - startTimer).count() < duration) {
+	while (true) {
 		int ds = dist(gen);
 
 
@@ -323,11 +322,18 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 			}
 		}
 		ops++;
-		if(std::chrono::steady_clock::now() >= nextLogTime){
-			localOps[intervalIdx] = ops;
-			intervalIdx++;
-			nextLogTime += std::chrono::seconds(interval);
+		if(ops % 1024 == 0){
+			if(std::chrono::steady_clock::now() >= nextLogTime){
+				localOps[intervalIdx] = ops;
+				intervalIdx++;
+				nextLogTime += std::chrono::seconds(interval);
+			}
+			if(std::chrono::steady_clock::now() >= endTimer){
+				localOps[intervalIdx] = ops;
+				break;
+			}
 		}
+		
 	}
 
 
@@ -355,3 +361,4 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 
 void global_cleanup(){
 }
+

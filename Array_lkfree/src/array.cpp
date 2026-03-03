@@ -53,6 +53,34 @@ int64_t get_ops(int node_id, size_t interval_idx) {
     return 0;
 }
 
+void single_array_init(std::string DS_config, int64_t array_size, int duration, int interval){
+    // --- 1. SETUP PHASE ---
+    size_t num_intervals = (interval > 0) ? std::max<size_t>(1, (duration / interval)) : 1;
+    globalOps0.assign(num_intervals,0);
+    globalOps1.assign(num_intervals, 0);
+    
+    // ---2. ALLOCATION PHASE ---
+    if(DS_config == "regular"){
+        array_node0 = new std::atomic<char*>[array_size];
+        array_node1 = new std::atomic<char*>[array_size];
+    }else{
+        array_node0 = reinterpret_cast<std::atomic<char*>*>(new numa<std::atomic<char*>, NODE_ZERO>[array_size]);
+        array_node1 = reinterpret_cast<std::atomic<char*>*>(new numa<std::atomic<char*>, MAX_NODE>[array_size]);
+    }
+
+    // --- 3. PRE-FILL PHASE (Your Original Method) ---
+    std::mt19937 rng(static_cast<unsigned int>(time(nullptr)));
+    std::uniform_int_distribution<int64_t> key_dist(0, array_size - 1);
+    char* word0;
+    char* word1;
+    for(int64_t j = 0; j < array_size; ++j){
+        int64_t next_hop = key_dist(rng);
+        char* fake_ptr = reinterpret_cast<char*>(next_hop);
+            array_node0[j].store(fake_ptr, std::memory_order_relaxed);
+            array_node1[j].store(fake_ptr, std::memory_order_relaxed);
+    }
+    std::cout<<"Done with single regular thread initialization\n";
+}
 
 void numa_array_init(int thread_id, int num_total_threads, std::string DS_config, int64_t array_size, int node, int num_arrays, int duration, int interval)
 {
@@ -88,9 +116,7 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
     
     for(int64_t j = 0; j < array_size; ++j){
         int64_t next_hop = key_dist(rng);
-            
         char* fake_ptr = reinterpret_cast<char*>(next_hop);
-  
         if(node == 0) {
             array_node0[j].store(fake_ptr, std::memory_order_relaxed);
         }

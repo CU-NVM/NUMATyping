@@ -103,7 +103,7 @@ void numa_hash_table_init(int thread_id,
             ht_node1 = reinterpret_cast<HashTable**>( new numa<HashTable*, MAX_NODE>[num_tables]);
             ht_node1_locks.resize(num_tables);
             for(int i = 0; i < num_tables; i++) {
-                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, MAX_NODE    >(buckets));
+                ht_node1[i] = reinterpret_cast<HashTable*>( new numa<HashTable, MAX_NODE>(buckets));
                 ht_node1_locks[i] = new std::mutex();
             }
             //std::cout << "Thread " << thread_id << " finished initializing NUMA hash tables on Node " << MAX_NODE << std::endl;
@@ -150,9 +150,9 @@ void numa_hash_table_init(int thread_id,
             if (table_index < tables_per_node) {
                 ht_node0_locks[table_index]->lock();
                 bool result = ht_node0[table_index]->insert(key.c_str());
-                if (result) {
-                    local_successful_inserts++;
-                }
+                // if (result) {
+                //     local_successful_inserts++;
+                // }
                 ht_node0_locks[table_index]->unlock();  
             }
             // If it belongs to Node 1, skip it.
@@ -163,9 +163,9 @@ void numa_hash_table_init(int thread_id,
                 int local_idx = table_index - tables_per_node;
                 ht_node1_locks[local_idx]->lock();
                 bool result = ht_node1[local_idx]->insert(key.c_str());
-                if (result) {
-                    local_successful_inserts++;
-                }
+                // if (result) {
+                //     local_successful_inserts++;
+                // }
                 ht_node1_locks[local_idx]->unlock();
             }
             // If it belongs to Node 0, skip it.
@@ -174,9 +174,9 @@ void numa_hash_table_init(int thread_id,
     // ------------------ REDUCTION ------------------
     pthread_barrier_wait(&init_bar);
 
-    globalLK->lock();
-        global_successful_init_inserts += local_successful_inserts;
-    globalLK->unlock();
+    // globalLK->lock();
+    //     global_successful_init_inserts += local_successful_inserts;
+    // globalLK->unlock();
 
     pthread_barrier_wait(&init_bar);
     #ifdef DEBUG
@@ -189,32 +189,6 @@ void numa_hash_table_init(int thread_id,
 }
 
 
-void prefill_hash_tables(int num_keys_to_fill, int total_num_tables) {
-//    // num_tables from main.cpp is the total number of tables
-//    int tables_per_node = total_num_tables / 2;
-//    int actual_total_tables = tables_per_node * 2;
-//
-//    if (actual_total_tables <= 0 || ht_node0.empty() || ht_node1.empty()) {
-//        std::cerr << "Prefill Error: Hash tables not initialized or num_tables < 2." << std::endl;
-//        return;
-//    }
-//
-//    for (long long i = 0; i < num_keys_to_fill; ++i) {
-//        std::string key = "key" + std::to_string(i);
-//        
-//        // hash into a table
-//        unsigned long key_hash = prefill_hash(key.c_str());
-//        int table_index = key_hash % actual_total_tables;
-//        // insert key i into the table the same way as in ycsb_test
-//        if (table_index < tables_per_node) {
-//            ht_node0[table_index]->insert(key.c_str());
-//        } else {
-//            int node1_index = table_index - tables_per_node;
-//            ht_node1[node1_index]->insert(key.c_str());
-//        }
-//    }
-//
-}
 
 void ycsb_test(
     int thread_id,
@@ -425,4 +399,5 @@ void ycsb_test(
         globalLK->unlock();
     #endif
 }
+
 

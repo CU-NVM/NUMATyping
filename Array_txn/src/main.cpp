@@ -199,4 +199,3 @@ int main(int argc, char *argv[])
     print_result(duration, ops0, ops1);
     return 0;
 }
-

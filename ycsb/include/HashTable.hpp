@@ -120,26 +120,37 @@ int HashTable::getCount(const char* word){
 }
 
 bool HashTable::updateCount(const char* word, int count){
-   int idx = hash(word);
+    int idx = hash(word);
     HashNode* curr = table[idx];
     HashNode* prev = nullptr;
 
     while (curr) {
         if (strcmp(curr->key, word) == 0) {
-            int new_count = curr->count + count;
-            if (prev)
-                prev->next = curr->next;
-            else
-                table[idx] = curr->next;
-            delete curr;
-
-            insert(word, new_count);
+            // Forcefully allocate a new node to trigger heap allocation 
+            // and cross-node memory traffic for the benchmark
+            HashNode* newNode = new HashNode(word);
+            newNode->count = curr->count + count;
+            newNode->next = curr->next;
+            
+            if (prev) {
+                prev->next = newNode;
+            } else {
+                table[idx] = newNode;
+            }
+            
+            delete curr; // Free the old node memory
             return true;
         }
         prev = curr;
         curr = curr->next;
     }
-    return false;
+    
+    // If it isn't found, insert it anyway to guarantee a heap allocation/write
+    HashNode* newNode = new HashNode(word);
+    newNode->count = count;
+    newNode->next = table[idx];
+    table[idx] = newNode;
+    return true;
 }
 
 bool HashTable::exists(const char* word){

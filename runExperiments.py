@@ -19,7 +19,7 @@ USAGE:
     python3 runExperiments.py --DS [name] [OPTIONS]
 
 CORE OPTIONS:
-    --DS NAME               Specify the data structure name (Required).
+    --DS NAME [NAME..]      Specify one or more data structure names (Required).
     --ROOT_DIR PATH         Path to NUMATyping root (Default: ~/NUMATyping).
     --numafy                Trigger the 'numafy.py' transformation pass. 
     --UMF                   Enable Unified Memory Framework support.
@@ -27,9 +27,11 @@ CORE OPTIONS:
     -d, --output PATH       Output directory (Default: ROOT_DIR/Result).
     --graph                 Generate plots after the run finishes.
     --jemalloc-root PATH    Manual path to jemalloc (Default: auto-detect via spack).
+    --numDS INT             Number of data structure elements (Default: 1000000)
+    --numKeys INT           Keyspace size (Default: 80)
 
 WORKFLOW EXAMPLE:
-    python3 runExperiments.py --DS stack --numafy --UMF
+    python3 runExperiments.py --DS HashTrie Skiplist --numafy --UMF
 """
     print(help_text)
     sys.exit(0)
@@ -70,7 +72,6 @@ def set_autonuma(desired: int) -> None:
 # ============================================================================
 
 def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
-    # Pass the MAX_NODE_ID to the Makefile via environment variable or Make arg
     max_node = os.environ.get("MAX_NODE_ID", "0")
     
     if do_numafy:
@@ -85,39 +86,34 @@ def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root:
     print(f"\n--- Compiling in {experiment_folder} ---")
     subprocess.run(f"make -C {experiment_folder} clean", shell=True, check=False)
     
-    # Add MAX_NODE_ID to make variables just in case the Makefile uses it directly
-    make_vars = f"ROOT_DIR={root_dir} MAX_NODE_ID={max_node}"
+    make_vars = f"ROOT_DIR={root_dir} "
     if jemalloc_root: make_vars += f" JEMALLOC_ROOT={jemalloc_root}"
     if UMF: make_vars += " UMF=1"
     
     subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
-def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str) -> None:
-    # 1. Retrieve Max Node ID
+def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str, numDS: str, numKeys: str) -> None:
     max_node = os.environ.get("MAX_NODE_ID", "0")
     
-    # 2. Construct the bind string (e.g., "0,7" or "0,3")
-    # If max_node is 0 (single node system), we just use "0" to avoid errors.
     if max_node == "0":
         bind_str = "0"
     else:
         bind_str = f"0,{max_node}"
 
-    print(f"--- Configuring NUMA Binding: {bind_str} ---")
+    print(f"--- Configuring NUMA Binding: 0,1 ---")
 
-    # 3. Construct the command dynamically
     cmd = (
         f'cd {experiment_folder} && python3 meta.py '
-        f'numactl --cpunodebind={bind_str} --membind={bind_str} '
+        f'numactl --cpunodebind=0,7 --membind=0,7 '
         './bin/datastructures '
-        '--meta n:20000000 '
-        '--meta t:128 '
-        '--meta D:300 '
+        f'--meta n:{numDS} '
+        '--meta t:64:128 '
+        '--meta D:14400 '
         f'--meta DS_name:{DS_name} '
-        '--meta th_config:numa:regular:reverse '
+        '--meta th_config:numa '
         '--meta DS_config:numa:regular '
-        '--meta k:1600 '
-        '--meta i:10 '
+        f'--meta k:{numKeys} '
+        '--meta i:200 '
         f'>> "{output_csv}"'
     )
     print(f"--- Running Experiment ---\n{cmd}\n")
@@ -132,7 +128,7 @@ if __name__ == "__main__":
         show_help()
 
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--DS', type=str, required=True)
+    parser.add_argument('--DS', type=str, nargs='+', required=True)
     parser.add_argument('--ROOT_DIR', default=os.path.expanduser("~/NUMATyping"))
     parser.add_argument('--numafy', action='store_true')
     parser.add_argument('--UMF', action='store_true')
@@ -140,6 +136,10 @@ if __name__ == "__main__":
     parser.add_argument('--AN', type=int, choices=[0, 1], default=1)
     parser.add_argument('--graph', action='store_true')
     parser.add_argument('--jemalloc-root')
+    
+    # Extract num_DS and keyspace into variables so they can dictate the file names
+    parser.add_argument('--numDS', type=str, default="1000000")
+    parser.add_argument('--numKeys', type=str, default="80")
 
     try:
         args = parser.parse_args()
@@ -153,31 +153,79 @@ if __name__ == "__main__":
 
     EXPERIMENT_FOLDER = os.path.join(ROOT_DIR, "Output/DataStructureTests")
     OUT_BASE = Path(ensure_dir(args.output)) if args.output else Path(ensure_dir(os.path.join(ROOT_DIR, "Result")))
+    GRAPH_BASE = Path(ensure_dir(os.path.join(ROOT_DIR, "Graphs")))
     
     JEMALLOC_ROOT = args.jemalloc_root or get_spack_path("jemalloc")
     
     #set_autonuma(args.AN)
-    
     an_folder = "AN_on" if args.AN == 1 else "AN_off"
-    output_file_path = OUT_BASE / an_folder / f"{args.DS}_Transactions.csv"
-    
-    # Ensure header
-    if not output_file_path.exists() or output_file_path.stat().st_size == 0:
-        output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_file_path.open("w") as f:
-            f.write("Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n")
 
-    # Wrap execution in try/except to catch runtime errors
+    header_str = "Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n"
+
     try:
+        # Compile only once before looping through data structures
         compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
-        run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER, args.DS)
 
-        if args.graph:
-            plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
-            # Note: adjust plot script path or arguments as needed for DS experiments
-            subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True, check=True)
+        for ds in args.DS:
+            print(f"\n=======================================================")
+            print(f"Starting Experiment Phase for Data Structure: {ds}")
+            print(f"=======================================================")
 
-        print(f"\nCOMPLETE. Results: {output_file_path}")
+            # Define filenames dynamically based on args
+            exp_filename = f"{ds}_experiments.csv"
+            specific_filename = f"{ds}_{args.numDS}_{args.numKeys}_experiments.csv"
+            
+            # Define all 4 output paths
+            out_exp_path = OUT_BASE / an_folder / exp_filename
+            out_specific_path = OUT_BASE / an_folder / specific_filename
+            graph_exp_path = GRAPH_BASE / an_folder / exp_filename
+            graph_specific_path = GRAPH_BASE / an_folder / specific_filename
+
+            # Ensure headers exist in BOTH append files
+            for target_path in [out_exp_path, graph_exp_path]:
+                if not target_path.exists() or target_path.stat().st_size == 0:
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    with target_path.open("w") as f:
+                        f.write(header_str)
+
+            # Note the number of lines in the main experiment file BEFORE running
+            with open(out_exp_path, "r") as f:
+                lines_before_run = len(f.readlines())
+
+            # Path 1: Append to main DSname_experiments.csv in the Result directory
+            run_experiment(out_exp_path.absolute(), EXPERIMENT_FOLDER, ds, args.numDS, args.numKeys)
+
+            # Extract ONLY the newest results
+            with open(out_exp_path, "r") as f:
+                all_lines = f.readlines()
+                
+            latest_run_lines = all_lines[lines_before_run:]
+
+            # Path 2: Overwrite DSname_numDS_numKeys_experiments.csv in the Result directory
+            out_specific_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_specific_path, "w") as f:
+                f.write(header_str)
+                f.writelines(latest_run_lines)
+
+            # Path 3: Append to DSname_experiments.csv in the Graphs directory
+            graph_exp_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(graph_exp_path, "a") as f:
+                f.writelines(latest_run_lines)
+                
+            # Path 4: Overwrite DSname_numDS_numKeys_experiments.csv in the Graphs directory
+            graph_specific_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(graph_specific_path, "w") as f:
+                f.write(header_str)
+                f.writelines(latest_run_lines)
+                
+            print(f"--- Data distributed successfully to {an_folder} directories ---")
+
+            if args.graph:
+                # Call the new plot_benchmark script
+                plot_script = os.path.join(ROOT_DIR, "Graphs/plot_bst.py")
+                subprocess.run(f'python3 {plot_script} --AN {args.AN} --ds_name "{ds}" --numDS {args.numDS} --numKeys {args.numKeys}', shell=True)
+                
+            print(f"COMPLETE. Primary Results for {ds} appended to: {out_exp_path}")
 
     except subprocess.CalledProcessError as e:
         print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")

@@ -31,12 +31,6 @@
 
 #include <iostream>
 
-#ifndef NUMA_NODE_NUM
-    #warning "NUMA NODES for je malloc handle is set to 2."
-    #define NUMA_NODE_NUM 2
-#endif
-
-
 // Function to create a memory provider which allocates memory from the specified NUMA node
 // by using umfMemspaceCreateFromNumaArray
 int createMemoryProviderFromArray(umf_memory_provider_handle_t *hProvider,
@@ -79,7 +73,7 @@ error_memspace:
     return ret;
 }
 
-static constexpr unsigned NUM_NODES = NUMA_NODE_NUM;
+static constexpr unsigned NUM_NODES = 8;
 static umf_memory_provider_handle_t NUMA_HANDLES[NUM_NODES]={};
 umf_memory_pool_handle_t jemalloc_pool[NUM_NODES]={};
     
@@ -143,7 +137,7 @@ void* umf_alloc(unsigned NodeId, size_t size, size_t allign){
     void *ptr = NULL;
     //ptr = umfPoolMalloc(jemalloc_pool[NodeId], size);
     ptr = umfFastJemallocMalloc(jemalloc_pool[NodeId], size);
-   // printf("allocating size %zu on node id %d \n", size, NodeId); 
+    // printf("Allocated %u bytes\n", size);
     assert(ptr && "Could not allocate pool");
     //umf_result_t ret = umfMemoryProviderAlloc(NUMA_HANDLES[NodeId], size, allign, &ptr);
     // umf_lock[NodeId].unlock();

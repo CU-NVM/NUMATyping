@@ -24,10 +24,11 @@ CORE OPTIONS:
     --UMF                  Enable Unified Memory Framework support.
     --AN [0|1]             Set AutoNUMA (Default: 1).
     -d, --output PATH      Output directory (Default: ROOT_DIR/Result).
-    --graph                Generate plots after the run finishes. (TODO: May not work properly)
+    --graph                Generate plots after the run finishes.
+    --workload STR [STR..] One or more workload configs (Default: A-50-50-50,D-100-0-50)
 
 WORKFLOW EXAMPLE:
-    python3 runYCSB.py --ROOT_DIR=$SCRATCH/NUMATyping --numafy --UMF
+    python3 runYCSB.py --ROOT_DIR=$SCRATCH/NUMATyping --numafy --UMF --workload A-50-50-50 B-100-0-0
 """
     print(help_text)
     sys.exit(0)
@@ -61,7 +62,6 @@ def set_autonuma(desired: int) -> None:
         with open("/proc/sys/kernel/numa_balancing", "w") as f:
             f.write(str(desired))
     except PermissionError:
-        # Fallback to sysctl if direct write fails
         subprocess.run(["sudo", "sysctl", f"kernel.numa_balancing={desired}"], check=False)
 
 # ============================================================================
@@ -69,7 +69,6 @@ def set_autonuma(desired: int) -> None:
 # ============================================================================
 
 def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
-    # Retrieve MAX_NODE_ID for logging and Make
     max_node = os.environ.get("MAX_NODE_ID", "0")
 
     if do_numafy:
@@ -84,31 +83,27 @@ def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root:
     print(f"\n--- Compiling in {experiment_folder} ---")
     subprocess.run(f"make -C {experiment_folder} clean", shell=True, check=False)
     
-    # Pass MAX_NODE_ID to Make
-    make_vars = f"ROOT_DIR={root_dir} MAX_NODE_ID={max_node}"
+    make_vars = f"ROOT_DIR={root_dir} "
     if jemalloc_root: make_vars += f" JEMALLOC_ROOT={jemalloc_root}"
     if UMF: make_vars += " UMF=1"
     
     subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
-def run_experiment(output_csv: Path, experiment_folder: str) -> None:
-    # 1. Retrieve Max Node ID
+def run_experiment(output_csv: Path, experiment_folder: str, workload: str) -> None:
     max_node = os.environ.get("MAX_NODE_ID", "0")
     
-    # 2. Construct the bind string (e.g., "0,7" or "0,3")
     if max_node == "0":
         bind_str = "0"
     else:
         bind_str = f"0,{max_node}"
 
-    print(f"--- Configuring NUMA Binding: {bind_str} ---")
+    print(f"--- Configuring NUMA Binding: {0,7} ---")
 
-    # 3. Construct the command dynamically
     cmd = (f'cd {experiment_folder} && python3 meta.py '
-           f'numactl --cpunodebind={bind_str} --membind={bind_str} ./bin/ycsb '
+           f'numactl --cpunodebind=0,7 --membind=0,7 ./bin/ycsb '
            f'--meta th_config:numa:regular --meta DS_config:numa:regular '
-           f'--meta t:128 --meta b:1333 --meta w:D --meta u:300 '
-           f'--meta k:100000000 --meta l:80-20 --meta i:20 --meta a:1000 >> "{output_csv}"')
+           f'--meta t:128 --meta b:266600 --meta w:{workload} --meta u:7200 '
+           f'--meta k:200000000 --meta i:20 --meta a:1000 >> "{output_csv}"')
     
     print(f"--- Running Experiment ---\n{cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
@@ -126,16 +121,16 @@ if __name__ == "__main__":
     parser.add_argument('--numafy', action='store_true')
     parser.add_argument('--UMF', action='store_true')
     parser.add_argument("-d", "--output")
-    parser.add_argument('--AN', type=int, choices=[0, 1], default=1)
+    parser.add_argument('--AN', type=int, choices=[0, 1], default=0)
     parser.add_argument('--graph', action='store_true')
     parser.add_argument('--jemalloc-root')
+    parser.add_argument('--workload', type=str, nargs='+', default=["A-50-50-50,D-100-0-50"]) 
 
     try:
         args = parser.parse_args()
     except:
         show_help()
 
-    OUTPUT_FILENAME = "ycsb_experiments.csv"
     ROOT_DIR = os.path.abspath(args.ROOT_DIR)
     
     if not os.path.exists(ROOT_DIR):
@@ -144,29 +139,85 @@ if __name__ == "__main__":
 
     EXPERIMENT_FOLDER = os.path.join(ROOT_DIR, "Output/ycsb")
     OUT_BASE = Path(ensure_dir(args.output)) if args.output else Path(ensure_dir(os.path.join(ROOT_DIR, "Result")))
+    GRAPH_BASE = Path(ensure_dir(os.path.join(ROOT_DIR, "Graphs")))
     
     JEMALLOC_ROOT = args.jemalloc_root or get_spack_path("jemalloc")
     
-    set_autonuma(args.AN)
-    
+#    set_autonuma(args.AN)
     an_folder = "AN_on" if args.AN == 1 else "AN_off"
-    output_file_path = OUT_BASE / an_folder / OUTPUT_FILENAME
-    
-    # Ensure header
-    if not output_file_path.exists() or output_file_path.stat().st_size == 0:
-        output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_file_path.open("w") as f:
-            f.write("Date, Time, num_tables, num_threads, thread_config, DS_config, buckets, workload, duration, num_keys, locality, interval, ops_node0, ops_node1, total_ops\n")
 
     try:
+        # Compile only once before looping through workloads
         compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
-        run_experiment(output_file_path.absolute(), EXPERIMENT_FOLDER)
 
-        if args.graph:
-            plot_script = os.path.join(ROOT_DIR, "Result/plots/plot_histogram.py")
-            subprocess.run(f'python3 {plot_script} "{output_file_path}" --show --save {OUT_BASE}/{an_folder}/figs', shell=True)
+        for wl in args.workload:
+            print(f"\n=======================================================")
+            print(f"Starting Experiment Phase for Workload: {wl}")
+            print(f"=======================================================")
+
+            # Replace commas with underscores to keep filenames clean and safe
+            safe_filename = f"ycsb_{wl.replace(',', '_')}.csv"
             
-        print(f"\nCOMPLETE. Results: {output_file_path}")
+            # Define all 4 output paths
+            out_exp_path = OUT_BASE / an_folder / "ycsb_experiments.csv"
+            out_wl_path = OUT_BASE / an_folder / safe_filename
+            graph_exp_path = GRAPH_BASE / an_folder / "ycsb_experiments.csv"
+            graph_wl_path = GRAPH_BASE / an_folder / safe_filename
+            
+            # 1. Dynamic Header Formatting
+            base_header = "Date, Time, num_tables, num_threads, thread_config, DS_config, buckets, workload, duration, num_keys, locality, interval, ops_node0, ops_node1, total_ops\n"
+            
+            workload_count = wl.count(",") + 1
+            if workload_count > 1:
+                workload_cols = ", ".join([f"workload{i+1}" for i in range(workload_count)]) + ","
+                header_to_write = base_header.replace("workload,", workload_cols)
+            else:
+                header_to_write = base_header
+
+            # Ensure headers exist in BOTH append files
+            for exp_path in [out_exp_path, graph_exp_path]:
+                if not exp_path.exists() or exp_path.stat().st_size == 0:
+                    exp_path.parent.mkdir(parents=True, exist_ok=True)
+                    with exp_path.open("w") as f:
+                        f.write(header_to_write)
+
+            # Note the number of lines in the main experiment file BEFORE running
+            with open(out_exp_path, "r") as f:
+                lines_before_run = len(f.readlines())
+
+            # Path 1: Append to main ycsb_experiments.csv in the Result directory
+            run_experiment(out_exp_path.absolute(), EXPERIMENT_FOLDER, wl)
+
+            # Extract ONLY the newest results
+            with open(out_exp_path, "r") as f:
+                all_lines = f.readlines()
+                
+            latest_run_lines = all_lines[lines_before_run:]
+
+            # Path 2: Overwrite workload-specific file in the Result directory
+            out_wl_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_wl_path, "w") as f:
+                f.write(header_to_write)
+                f.writelines(latest_run_lines)
+
+            # Path 3: Append to ycsb_experiments.csv in the Graphs directory
+            graph_exp_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(graph_exp_path, "a") as f:
+                f.writelines(latest_run_lines)
+                
+            # Path 4: Overwrite workload-specific file in the Graphs directory
+            graph_wl_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(graph_wl_path, "w") as f:
+                f.write(header_to_write)
+                f.writelines(latest_run_lines)
+                
+            print(f"--- Data distributed successfully to {an_folder} directories ---")
+
+            if args.graph:
+                plot_script = os.path.join(ROOT_DIR, "Graphs/bar_plot_ycsb.py")
+                subprocess.run(f'python3 {plot_script} --AN {args.AN}', shell=True)
+                
+            print(f"COMPLETE. Primary Results for {wl} appended to: {out_exp_path}")
 
     except subprocess.CalledProcessError as e:
         print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")
