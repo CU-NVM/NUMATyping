@@ -3,6 +3,7 @@ import subprocess
 import argparse
 import os
 import sys
+import time  # <-- Added time for the sleep safeguard
 from pathlib import Path
 
 # ============================================================================
@@ -23,15 +24,16 @@ CORE OPTIONS:
     --ROOT_DIR PATH         Path to NUMATyping root (Default: ~/NUMATyping).
     --numafy                Trigger the 'numafy.py' transformation pass. 
     --UMF                   Enable Unified Memory Framework support.
-    --AN [0|1]              Set AutoNUMA (Default: 1).
+    --AN [0|1]              Set AutoNUMA. 1 adds '--balancing' to numactl (Default: 1).
     -d, --output PATH       Output directory (Default: ROOT_DIR/Result).
     --graph                 Generate plots after the run finishes.
+    --perlmutter            Use Perlmutter config (128 threads, node 0/7 binding, '_perl' suffix).
     --jemalloc-root PATH    Manual path to jemalloc (Default: auto-detect via spack).
     --numDS INT             Number of data structure elements (Default: 1000000)
     --numKeys INT           Keyspace size (Default: 80)
 
 WORKFLOW EXAMPLE:
-    python3 runExperiments.py --DS HashTrie Skiplist --numafy --UMF
+    python3 runExperiments.py --DS HashTrie Skiplist --numafy --UMF --perlmutter --AN 1
 """
     print(help_text)
     sys.exit(0)
@@ -51,21 +53,6 @@ def get_spack_path(package):
 def ensure_dir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return os.path.abspath(path)
-
-def set_autonuma(desired: int) -> None:
-    try:
-        with open("/proc/sys/kernel/numa_balancing", "r") as f:
-            cur = int(f.read().strip())
-    except FileNotFoundError:
-        return
-
-    if cur == desired: return
-
-    try:
-        with open("/proc/sys/kernel/numa_balancing", "w") as f:
-            f.write(str(desired))
-    except PermissionError:
-        subprocess.run(["sudo", "sysctl", f"kernel.numa_balancing={desired}"], check=False)
 
 # ============================================================================
 # Execution Pipeline
@@ -92,32 +79,59 @@ def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root:
     
     subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
-def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str, numDS: str, numKeys: str) -> None:
+def run_experiment(output_csv: Path, experiment_folder: str, DS_name: str, numDS: str, numKeys: str, an_setting: int, is_perlmutter: bool) -> None:
     max_node = os.environ.get("MAX_NODE_ID", "0")
     
-    if max_node == "0":
-        bind_str = "0"
+    # Adjust NUMA binding targets based on the system
+    if is_perlmutter:
+        numactl_base = "--cpunodebind=0,7 --membind=0,7"
+        t_val = "128"
     else:
-        bind_str = f"0,{max_node}"
+        numactl_base = "--cpunodebind=0,1 --membind=0,1"
+        t_val = "40:80"
 
-    print(f"--- Configuring NUMA Binding: 0,1 ---")
+    # Dynamically build numactl flags based on the AN setting
+    if an_setting == 1:
+        numactl_flags = f"--balancing {numactl_base}"
+    else:
+        numactl_flags = numactl_base
 
-    cmd = (
-        f'cd {experiment_folder} && python3 meta.py '
-        f'numactl --cpunodebind=0,7 --membind=0,7 '
-        './bin/datastructures '
-        f'--meta n:{numDS} '
-        '--meta t:64:128 '
-        '--meta D:14400 '
-        f'--meta DS_name:{DS_name} '
-        '--meta th_config:numa '
-        '--meta DS_config:numa:regular '
-        f'--meta k:{numKeys} '
-        '--meta i:200 '
-        f'>> "{output_csv}"'
-    )
-    print(f"--- Running Experiment ---\n{cmd}\n")
-    subprocess.run(cmd, shell=True, check=True)
+    print(f"--- Configuring NUMA Binding: {numactl_flags} ---")
+
+    # Define the 4 combinations explicitly to bypass meta.py's fragile internal loop
+    combinations = [
+        ("numa", "numa"),
+        ("numa", "regular"),
+        ("regular", "numa"),
+        ("regular", "regular")
+    ]
+
+    for th, ds in combinations:
+        cmd_list = [
+            "python3", "meta.py",
+            "numactl"
+        ] + numactl_flags.split() + [
+            "./bin/datastructures",
+            "--meta", f"n:{numDS}",
+            "--meta", f"t:{t_val}",
+            "--meta", "D:7200",
+            "--meta", f"DS_name:{DS_name}",
+            "--meta", f"th_config:{th}",  # <-- Uses the loop variable
+            "--meta", f"DS_config:{ds}",  # <-- Uses the loop variable
+            "--meta", f"k:{numKeys}",
+            "--meta", "i:10"
+        ]
+
+        print(f"\n-> Running Combination: Thread={th} | DataStructure={ds}")
+        print(f"Executing: {' '.join(cmd_list)}")
+
+        # Open the file in Python and pass it to stdout to prevent shell pipe crashes
+        with open(output_csv, "a") as f:
+            subprocess.run(cmd_list, cwd=experiment_folder, stdout=f, text=True, check=True)
+
+        # Crucial HPC fix: Wait 10 seconds before the next run
+        print("-> Run complete. Sleeping 10s to clear memory caches...")
+        time.sleep(10)
 
 # ============================================================================
 # Main
@@ -135,11 +149,12 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--output")
     parser.add_argument('--AN', type=int, choices=[0, 1], default=1)
     parser.add_argument('--graph', action='store_true')
+    parser.add_argument('--perlmutter', action='store_true')
     parser.add_argument('--jemalloc-root')
     
     # Extract num_DS and keyspace into variables so they can dictate the file names
-    parser.add_argument('--numDS', type=str, default="1000000")
-    parser.add_argument('--numKeys', type=str, default="80")
+    parser.add_argument('--numDS', type=str, default="3000000")
+    parser.add_argument('--numKeys', type=str, default="240")
 
     try:
         args = parser.parse_args()
@@ -157,7 +172,6 @@ if __name__ == "__main__":
     
     JEMALLOC_ROOT = args.jemalloc_root or get_spack_path("jemalloc")
     
-    #set_autonuma(args.AN)
     an_folder = "AN_on" if args.AN == 1 else "AN_off"
 
     header_str = "Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n"
@@ -171,61 +185,60 @@ if __name__ == "__main__":
             print(f"Starting Experiment Phase for Data Structure: {ds}")
             print(f"=======================================================")
 
-            # Define filenames dynamically based on args
+            # 1. Build Filenames (appending _perl if running on Perlmutter)
+            file_suffix = "_perl.csv" if args.perlmutter else ".csv"
+            specific_filename = f"{ds}_{args.numDS}_{args.numKeys}_experiments{file_suffix}"
             exp_filename = f"{ds}_experiments.csv"
-            specific_filename = f"{ds}_{args.numDS}_{args.numKeys}_experiments.csv"
             
             # Define all 4 output paths
-            out_exp_path = OUT_BASE / an_folder / exp_filename
             out_specific_path = OUT_BASE / an_folder / specific_filename
-            graph_exp_path = GRAPH_BASE / an_folder / exp_filename
             graph_specific_path = GRAPH_BASE / an_folder / specific_filename
+            
+            out_exp_path = OUT_BASE / an_folder / exp_filename
+            graph_exp_path = GRAPH_BASE / an_folder / exp_filename
 
-            # Ensure headers exist in BOTH append files
+            # Ensure headers exist in the aggregate files
             for target_path in [out_exp_path, graph_exp_path]:
                 if not target_path.exists() or target_path.stat().st_size == 0:
                     target_path.parent.mkdir(parents=True, exist_ok=True)
                     with target_path.open("w") as f:
                         f.write(header_str)
 
-            # Note the number of lines in the main experiment file BEFORE running
-            with open(out_exp_path, "r") as f:
-                lines_before_run = len(f.readlines())
+            # Initialize the specific isolated files with the header
+            for spec_path in [out_specific_path, graph_specific_path]:
+                spec_path.parent.mkdir(parents=True, exist_ok=True)
+                with spec_path.open("w") as f:
+                    f.write(header_str)
 
-            # Path 1: Append to main DSname_experiments.csv in the Result directory
-            run_experiment(out_exp_path.absolute(), EXPERIMENT_FOLDER, ds, args.numDS, args.numKeys)
+            # ---------------------------------------------------------
+            # EXECUTION FLOW: 
+            # Write directly to the isolated file first to avoid race conditions
+            # ---------------------------------------------------------
+            run_experiment(out_specific_path.absolute(), EXPERIMENT_FOLDER, ds, args.numDS, args.numKeys, args.AN, args.perlmutter)
 
-            # Extract ONLY the newest results
-            with open(out_exp_path, "r") as f:
-                all_lines = f.readlines()
-                
-            latest_run_lines = all_lines[lines_before_run:]
+            # Read the newly generated data (excluding the header)
+            with open(out_specific_path, "r") as f:
+                lines = f.readlines()
+                data_lines = lines[1:] # Skip header
 
-            # Path 2: Overwrite DSname_numDS_numKeys_experiments.csv in the Result directory
-            out_specific_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(out_specific_path, "w") as f:
-                f.write(header_str)
-                f.writelines(latest_run_lines)
+            # Copy the isolated results to the Graphs directory
+            with open(graph_specific_path, "a") as f:
+                f.writelines(data_lines)
 
-            # Path 3: Append to DSname_experiments.csv in the Graphs directory
-            graph_exp_path.parent.mkdir(parents=True, exist_ok=True)
+            # Append the isolated results to the aggregate master files
+            with open(out_exp_path, "a") as f:
+                f.writelines(data_lines)
             with open(graph_exp_path, "a") as f:
-                f.writelines(latest_run_lines)
+                f.writelines(data_lines)
                 
-            # Path 4: Overwrite DSname_numDS_numKeys_experiments.csv in the Graphs directory
-            graph_specific_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(graph_specific_path, "w") as f:
-                f.write(header_str)
-                f.writelines(latest_run_lines)
-                
-            print(f"--- Data distributed successfully to {an_folder} directories ---")
+            print(f"--- Data safely written to isolated files and appended to master aggregates ---")
 
             if args.graph:
-                # Call the new plot_benchmark script
+                # Call the specific plot_benchmark script
                 plot_script = os.path.join(ROOT_DIR, "Graphs/plot_bst.py")
                 subprocess.run(f'python3 {plot_script} --AN {args.AN} --ds_name "{ds}" --numDS {args.numDS} --numKeys {args.numKeys}', shell=True)
                 
-            print(f"COMPLETE. Primary Results for {ds} appended to: {out_exp_path}")
+            print(f"COMPLETE. Primary Results for {ds} saved to: {out_specific_path}")
 
     except subprocess.CalledProcessError as e:
         print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")

@@ -27,4 +27,5 @@ echo "Working directory is: $(pwd)"
 
 echo "=== STARTING MY SCRIPT ==="
 # 4. Run your workload
-python3 runExperiments.py --ROOT_DIR=/pscratch/sd/k/kiwo9430/NUMATyping --DS=bst --AN=0  --UMF --graph --numDS=3000000 --numKeys=240 --perlmutter
+python3 runExperiments.py --ROOT_DIR=/pscratch/sd/k/kiwo9430/NUMATyping --DS=bst --numafy --AN=1  --UMF --graph --numDS=3000000 --numKeys=240 --perlmutter
+
