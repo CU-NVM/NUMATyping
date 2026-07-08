@@ -24,6 +24,8 @@ int bucket_count = 1024;
 string workload_key = "A-100-0-100"; // Default to Workload A, 100% local, 100% of threads
 uint64_t num_keys = 10000;
 double theta = 0.99;
+string key_mix = "uniform";   // --mix: "uniform" or "zipfian"
+string hash_fn = "djb2";      // --hash: "djb2" or "mix"
 string th_config = "regular";
 string DS_config = "regular";
 int duration = 20;
@@ -59,8 +61,10 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps) 
 	std::cout<<num_threads << ", ";
 	std::cout<<th_config << ", ";
 	std::cout<<DS_config << ", ";
+	// mix column intentionally omitted -- it's encoded in the output filename
     std::cout<<bucket_count<<", ";
-    std::cout<<workload_key<<", ";
+    for(char _c : workload_key) std::cout << (_c==',' ? '-' : _c);  // ','->'-' so it's one CSV cell
+    std::cout<<", ";
 	std::cout<<duration << ", ";
 	std::cout<<num_keys<<", ";
 	std::cout<<interval<<", ";
@@ -70,7 +74,7 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps) 
 }
 
 void print_header() {
-    std::cout << "Date, Time, Num_Tables, Num_Threads, Thread_Config, DS_Config, Buckets, Workload, Duration(s), Num_Keys, Interval(s), Ops_Node0, Ops_Node1, Total_Ops\n";
+    std::cout << "Date, Time, Num_Tables, Num_Threads, Thread_Config, DS_Config, Mix, Buckets, Workload, Duration(s), Num_Keys, Interval(s), Ops_Node0, Ops_Node1, Total_Ops\n";
 }
 
 void compile_options(int argc, char *argv[]) {
@@ -85,6 +89,8 @@ void compile_options(int argc, char *argv[]) {
         {"DS_config",  required_argument, nullptr, 'd'},
         {"interval",   required_argument, nullptr, 'i'},
         {"tables",     required_argument, nullptr, 'a'},
+        {"mix",        required_argument, nullptr, 'm'},
+        {"hash",       required_argument, nullptr, 'H'},
         {"help",       no_argument,       nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
@@ -92,7 +98,7 @@ void compile_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:c:d:i:a:h", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:c:d:i:a:m:H:h", long_options, &option_index)) != -1) {
         switch (opt) {
             case 't': num_threads = std::stoi(optarg); break;
             case 'b': bucket_count = std::stoi(optarg); break;
@@ -103,6 +109,20 @@ void compile_options(int argc, char *argv[]) {
             case 'c': th_config = optarg; break;
             case 'd': DS_config = optarg; break;
             case 'a': num_tables = std::stoi(optarg); break;
+            case 'm':
+                key_mix = optarg;
+                if (key_mix != "uniform" && key_mix != "zipfian") {
+                    cerr << "Invalid --mix value '" << key_mix << "' (expected 'uniform' or 'zipfian').\n";
+                    exit(1);
+                }
+                break;
+            case 'H':
+                hash_fn = optarg;
+                if (hash_fn != "djb2" && hash_fn != "mix") {
+                    cerr << "Invalid --hash value '" << hash_fn << "' (expected 'djb2' or 'mix').\n";
+                    exit(1);
+                }
+                break;
             case 'h':
                 cout << "Usage: ./runner [options]\n";
                 cout << "Options:\n";
@@ -115,6 +135,8 @@ void compile_options(int argc, char *argv[]) {
                 cout << "  -z, --theta <float>      Zipfian theta (default: 0.99)\n";
                 cout << "  -c, --th_config <cfg>    Thread config (regular, numa) (default: regular)\n";
                 cout << "  -d, --DS_config <cfg>    Data structure config (regular, numa) (default: regular)\n";
+                cout << "  -m, --mix <dist>         Key distribution: uniform or zipfian (default: uniform)\n";
+                cout << "  -H, --hash <fn>          Key placement hash: djb2 or mix (default: djb2)\n";
                 exit(0);
             case '?':
                 cerr << "Unknown option or missing argument.\n";
@@ -212,8 +234,14 @@ void run_ycsb_benchmark(
         return;
     }
     
-    for (int i = 0; i < num_threads; ++i)
-        generators.push_back(new ZipfianGenerator(0, num_keys - 1, theta));
+    // Building a ZipfianGenerator runs an O(num_keys) zeta precompute; only pay
+    // that when --mix=zipfian. For uniform, push nullptr (ycsb_test won't use it).
+    for (int i = 0; i < num_threads; ++i) {
+        if (key_mix == "zipfian")
+            generators.push_back(new ZipfianGenerator(0, num_keys - 1, theta));
+        else
+            generators.push_back(nullptr);
+    }
 
     vector<MixedWorkloadConfig> thread_tasks = parse_mixed_workload(workload_key, num_threads);
     
@@ -275,6 +303,7 @@ void run_ycsb_benchmark(
 
     auto start = chrono::high_resolution_clock::now();
     int tables_per_node = num_tables/2;
+    bool use_zipfian = (key_mix == "zipfian");
 
     for (int i = 0; i < threads_per_node; ++i) {
         int thread_id = i;
@@ -287,7 +316,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node
+                interval, tables_per_node, use_zipfian
             );
         } else {
             regular_thread0[i] = new thread(
@@ -296,7 +325,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node
+                interval, tables_per_node, use_zipfian
             );
         }
     }
@@ -311,7 +340,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node
+                interval, tables_per_node, use_zipfian
             );
         } else {
             regular_thread1[i] = new thread(
@@ -320,7 +349,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node
+                interval, tables_per_node, use_zipfian
             );
         }
     }
@@ -349,6 +378,10 @@ void run_ycsb_benchmark(
 int main(int argc, char** argv) {
 
     compile_options(argc, argv);
+
+    // Select the key-placement hash before any prefill/worker threads spawn.
+    set_hash_mode(hash_fn == "mix" ? 1 : 0);
+    std::cerr << "[config] hash=" << hash_fn << " mix=" << key_mix << "\n";
 
     if (th_config == "numa" || DS_config == "numa") {
         if (numa_num_configured_nodes() == 1) {

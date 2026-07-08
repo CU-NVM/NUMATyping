@@ -102,7 +102,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
                 BST_lk0[i]= new mutex();
                 BST_reader_lk0[i]= new mutex();
             }
-            //std::cout<<"Thread with node "<< node<< "finished initializing on node "<<NODE_ZERO<<"\n";
+        
 
         }else{
             BSTs0 = new BinarySearchTree*[num_DS];
@@ -119,7 +119,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				BSTs0[j]->insert(dist(gen));
 			}
 		}
-         //std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
+        
 
     }
     else{
@@ -132,7 +132,7 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
                 BST_lk1[i]= new mutex();
                 BST_reader_lk1[i]= new mutex();
             }  
-            //std::cout<<"Thread with node "<< node<< "finished initializing on node "<<MAX_NODE<<"\n";
+    
 
         }else{
             BSTs1 = new BinarySearchTree*[num_DS];
@@ -150,7 +150,6 @@ void numa_BST_init(std::string DS_config, int num_DS, int keyspace, int node, in
 				BSTs1[j]->insert(dist(gen));
 			}
 		}
-        //std::cout<<"Thread with node "<< node<< "finished prefilling of "<< num_DS<< "data structures with keyspace of "<<keyspace/2<<"\n";
 
     }
     pthread_barrier_wait(&init_bar);

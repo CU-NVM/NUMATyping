@@ -13,10 +13,12 @@
 #include <stdexcept>
 #include <iostream>
 #include <cassert>
+#ifdef UMF
 #include <umf/mempolicy.h>
 #include <umf/memspace.h>
 #include "utils_examples.h"
 #include "umf_numa_allocator.hpp"
+#endif
 
 
 

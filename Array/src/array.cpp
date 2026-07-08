@@ -6,7 +6,6 @@
 #include <random>
 #include <string>
 #include <thread>
-#include <atomic> // REQUIRED for Zero-Contention
 #include <cstring>
 #include <cstdio> 
 #include <algorithm> 
@@ -21,18 +20,27 @@ using namespace std::chrono;
     #define MAX_NODE 1
 #endif
 
+// ---------------- INTERNAL STATE ----------------
+
+
 static char** array_node0;
 static char** array_node1;
+// Lock-based variant: each read takes a per-node shared lock (read_lk0/1).
+// See the array_lk_free benchmark for the lock-free version.
 
+// Synchronization
 static std::mutex* globalLK = nullptr;
 static pthread_barrier_t bar;
 static pthread_barrier_t init_bar;
 
+// Results Storage
 static std::vector<int64_t> globalOps0;
 static std::vector<int64_t> globalOps1;
 
 static std::shared_mutex* read_lk0;
 static std::shared_mutex* read_lk1;
+
+// ---------------- HELPER FUNCTIONS ----------------
 
 void global_init(int num_threads, int duration, int interval) {
     pthread_barrier_init(&bar, NULL, num_threads);
@@ -56,20 +64,19 @@ int64_t get_ops(int node_id, size_t interval_idx) {
     return 0;
 }
 
+// ---------------- THREAD FUNCTIONS ----------------
 
 void numa_array_init(int thread_id, int num_total_threads, std::string DS_config, int64_t array_size, int node, int num_arrays, int duration, int interval)
 {
     // --- 1. SETUP PHASE ---
-    size_t num_intervals = (interval > 0) ? (duration / interval) : 1;
-    if (node == 0) {
-        globalOps0.assign(num_intervals, 0);
-    } else {
-        globalOps1.assign(num_intervals, 0);
-    }
+    // One result slot per node (the per-interval time series was removed).
+    if (node == 0) globalOps0.assign(1, 0);
+    else           globalOps1.assign(1, 0);
 
     pthread_barrier_wait(&init_bar);
 
     // --- 2. ALLOCATION PHASE ---
+    // We allocate arrays of std::atomic<char*> instead of raw char*
 
     if (DS_config == "regular") {
         if(node == 0)
@@ -86,15 +93,38 @@ void numa_array_init(int thread_id, int num_total_threads, std::string DS_config
     
     pthread_barrier_wait(&init_bar);
 
-    // --- 3. pre-fill phase ---
+    // --- 3. PRE-FILL PHASE ---
     std::mt19937 rng(static_cast<unsigned int>(time(nullptr)) + thread_id);
     std::uniform_int_distribution<int64_t> key_dist(1, array_size-1);
-    for(int64_t j = 0; j < array_size; ++j){    
-		int64_t next_hop = key_dist(rng);      
-        char* fake_ptr = reinterpret_cast<char*>(next_hop);
-        if(node == 0) array_node0[j]=fake_ptr;
-       	else array_node1[j]=fake_ptr;
- 	}
+    
+    char temp_buf[64];
+    
+
+    for(int64_t j = 0; j < array_size; ++j){ 
+       if(DS_config == "regular"){
+            char* new_word = new char[10];
+            sprintf(temp_buf, "%ld", key_dist(rng));
+            std::strcpy(new_word, temp_buf);
+            if(node == 0)
+                array_node0[j]= new_word;
+            else
+                array_node1[j]= new_word;
+       }
+       else if(node == 0){
+            char* new_word = reinterpret_cast<char*>(new numa<char, 0>[10]);
+            sprintf(temp_buf, "%ld", key_dist(rng));
+            std::strcpy(new_word, temp_buf);
+            array_node0[j]= new_word;
+       }
+       else{
+            char* new_word = reinterpret_cast<char*>(new numa<char, MAX_NODE>[10]);
+            sprintf(temp_buf, "%ld", key_dist(rng));
+            std::strcpy(new_word, temp_buf);
+            array_node1[j]= new_word;
+       }
+    }
+    
+
     pthread_barrier_wait(&init_bar);
 }
 
@@ -103,98 +133,45 @@ void array_test(int tid, int duration, std::string DS_config, int node, int num_
     pthread_barrier_wait(&bar);
 
     int64_t ops = 0;
-    
-    // Interval Setup
-    size_t num_intervals = (interval > 0) ? (duration / interval) : 1;
-    std::vector<int64_t> local_interval_ops(num_intervals, 0);
+
     auto startTimer = std::chrono::steady_clock::now();
-    auto endTimer = startTimer + std::chrono::seconds(duration);
-    auto nextIntervalTime = startTimer + std::chrono::seconds(interval > 0 ? interval : duration);
-   
-	int interval_idx = 0;
-	int64_t last_snapshot_ops = 0;
+    auto endTimer   = startTimer + std::chrono::seconds(duration);
 
     std::mt19937_64 rng(tid);
-    std::uniform_int_distribution<long long> op_dist(1, 100);
-    std::uniform_int_distribution<long long> array_dist(0, num_arrays - 1);
     std::uniform_int_distribution<long long> word_dist(0, array_size - 1);
 
     int64_t curr_idx = word_dist(rng);
     volatile char* word;
     while (true) {
-        int array_choice = array_dist(rng);
-        int word_choice = word_dist(rng);
-        int op_choice = op_dist(rng);
-
-        if(node == 0){
+        // Dependent read under a per-node shared lock: the pointer read at
+        // curr_idx determines the next index, so reads can't be prefetched and
+        // the loop is memory-latency bound.
+        if (node == 0) {
             read_lk0->lock_shared();
             word = array_node0[curr_idx];
             read_lk0->unlock_shared();
-        }
-        else{
+        } else {
             read_lk1->lock_shared();
             word = array_node1[curr_idx];
             read_lk1->unlock_shared();
         }
 
-        int64_t next_idx = reinterpret_cast<int64_t>(word); // Use the content to determine next index (introduces data dependency)
-        curr_idx = (next_idx+word_dist(rng)) % array_size; // Add some randomness to the next index to prevent simple sequential access patterns
-       
+        // The stored pointer's value drives the walk; jitter breaks up sequential runs.
+        int64_t next_idx = reinterpret_cast<int64_t>(word);
+        curr_idx = (next_idx + word_dist(rng)) % array_size;
         ops++;
-		
-     	if (interval > 0) {
-        	auto now = std::chrono::steady_clock::now();
-            if (now >= nextIntervalTime && interval_idx <num_intervals){
-                local_interval_ops[interval_idx] = ops;
-                last_snapshot_ops = ops;
-                nextIntervalTime += std::chrono::seconds(interval);
-                interval_idx++;
-            }
- 			if((ops % 1024) == 0){
-            	auto now = std::chrono::steady_clock::now();
-           	 	if(now >= endTimer){
-                	local_interval_ops[interval_idx] = ops;
-                	break;
-           		} 
-        	}
-        }
- 
-        if((ops % 1024) == 0){
-            auto now = std::chrono::steady_clock::now();
-            if(now >= endTimer){
-                local_interval_ops[0] = ops;
-                break;
-            } 
-        } 
+
+        if (ops > 1000000 && std::chrono::steady_clock::now() >= endTimer)
+            break;
     }
-    
-    // Capture remaining ops
-    if (interval > 0 && interval_idx < num_intervals) local_interval_ops[interval_idx] = ops;
-    else if (interval == 0) local_interval_ops[0] = ops;
 
+    pthread_barrier_wait(&bar);
 
-    pthread_barrier_wait(&bar);   
-
-    // Aggregate
+    // Aggregate this thread's op count into its node's total.
     globalLK->lock();
-   	if(node == 0) {
-		if(interval==0){
-			globalOps0[0] += local_interval_ops[0];		
- 		}else {
-			for(size_t i=0; i<local_interval_ops.size(); i++) {
-        		globalOps0[i] += local_interval_ops[i];
-			}
-		}
-    }else {
-		if(interval==0){
-			globalOps1[0] += local_interval_ops[0];		
- 		}else {
-			for(size_t i=0; i<local_interval_ops.size(); i++) {
-        		globalOps1[i] += local_interval_ops[i];
-			}
-		}
-    }
-    
-	globalLK->unlock();
+    if (node == 0) globalOps0[0] += ops;
+    else           globalOps1[0] += ops;
+    globalLK->unlock();
+
     pthread_barrier_wait(&bar);
 }

@@ -1,4 +1,5 @@
-/*in file for array test
+/*! \file array_main.cpp
+ * \brief Main file for array test
  * \author Kidus Workneh
  * \date 2026 
 */
@@ -54,7 +55,7 @@ void print_result(int elapsed_time, int64_t ops0, int64_t ops1) {
     
 
     int64_t total = ops0 + ops1;
-    int64_t throughput = (interval > 0) ? total / interval : 0;
+    int64_t throughput = (elapsed_time > 0) ? total / elapsed_time : 0;
 
     std::cout << std::put_time(local_time, "%Y-%m-%d %H:%M:%S") << ", "
 			  << thread_config << ", "
@@ -130,14 +131,13 @@ static struct option long_options[] = {
  int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "t:n:f:u:s:i:n:", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:d:t:D:f::s:i:n:vh", long_options, &option_index)) != -1) {
         switch (opt) {
             case 'c':  // --th_config option
                 thread_config = optarg;             
                 break;
             case 'd':  // --DS_config option
                 DS_config = optarg;
-                break;
                 break;
             case 't':  // -t option for num_threads
                 num_threads = std::stoll(optarg);
@@ -159,9 +159,9 @@ static struct option long_options[] = {
 			case 'v':  // --verbose flag
 				verbose = true;
 				break;		
-			case 'u':  // -u duration option
+			case 'D':  // -D / --duration option
 				duration = std::stoll(optarg);
-				break;	
+				break;
 			case 'i':  // -i interval option
 				interval = std::stoll(optarg);
 				break;	
@@ -190,19 +190,10 @@ int main(int argc, char *argv[])
 	print_header();
 	
     // --- REPORTING PHASE ---
-    size_t num_intervals = get_num_intervals();
-	if(interval > 0){
-		for(int i=0; i < num_intervals; i++){
-			int time_window = (i+1) * interval;
-			int64_t ops0 = get_ops(0,i);
-			int64_t ops1 = get_ops(1,i);
-			print_result(time_window, ops0, ops1);
-		}
-    }
-	else{
-		int64_t ops0 = get_ops(0, 0);
-		int64_t ops1 = get_ops(1, 0);
-		print_result(duration, ops0, ops1);
-	}
+    int64_t ops0 = get_ops(0, 0);
+    int64_t ops1 = get_ops(1, 0);
+    print_result(duration, ops0, ops1);
+
+
     return 0;
 }

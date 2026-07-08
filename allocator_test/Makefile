@@ -1,10 +1,9 @@
 # Compiler and basic settings
 CC         := clang++
-CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1 -DMAX_NODE=$(MAX_NODE_ID) -DNUMA_NODE_NUM=$(NUM_NUMA_NODES)
-LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread 
+CXXFLAGS   := -O3 -g -std=c++20 -pthread -fno-omit-frame-pointer -D_NODE_HPP=1 -DPIN_INIT=1
+LINK_FLAGS := -lnuma -g -O3 -std=c++20 -pthread
 
-$(info Building with MAX_NODE set to $(MAX_NODE_ID))
-$(info Building with NUM_NUMA_NODES set to $(NUM_NUMA_NODES))
+# This test only allocates on node 0, so no node-count macros are needed.
 # ROOT_DIR: Use provided value, otherwise default to $HOME/NUMATyping
 ROOT_DIR   ?= $(HOME)/NUMATyping
 
@@ -13,17 +12,17 @@ INC_DIRS := -Iinclude/  -I$(ROOT_DIR)/numaLib
 UMF_INC_DIRS :=
 
 # Executable and object files
-EXE  := ./bin/array
-OBJS := src/main.o 
+EXE  := ./bin/allocator_test
+OBJS := src/main.o
 
 # Unified Memory Framework (optional)
 # Usage: make UMF=1 JEMALLOC_ROOT=/path/to/jemalloc
 ifeq ($(UMF), 1)
     LINK_FLAGS += -lhwloc -lnuma -lrt -ldl -ljemalloc \
         $(ROOT_DIR)/unified-memory-framework/build/lib/libumf.a \
-        $(ROOT_DIR)/unified-memory-framework/build/lib/libjemalloc_pool.a \
-        -DUMF
+        $(ROOT_DIR)/unified-memory-framework/build/lib/libjemalloc_pool.a
 
+    # -DUMF gates the UMF code paths; node-count defines come from CXXFLAGS (line 3).
     UMF_INC_DIRS += -I$(ROOT_DIR)/unified-memory-framework/src/utils \
         -I$(ROOT_DIR)/unified-memory-framework/include \
         -I$(ROOT_DIR)/unified-memory-framework/examples/common \
@@ -33,10 +32,7 @@ ifeq ($(UMF), 1)
         -I$(ROOT_DIR)/unified-memory-framework/src/provider \
         -I$(ROOT_DIR)/unified-memory-framework/src/memspaces \
         -I$(ROOT_DIR)/unified-memory-framework/src/memtargets \
-        -DUMF \
-		-DPIN_INIT \
-		-DMAX_NODE=$(MAX_NODE_ID)
-		-DNUMA_NODE_NUM=$(NUM_NUMA_NODES)
+        -DUMF
     # Only add Jemalloc-specific flags if JEMALLOC_ROOT is defined
     ifdef JEMALLOC_ROOT
         UMF_INC_DIRS += -I$(JEMALLOC_ROOT)/include

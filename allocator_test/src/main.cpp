@@ -26,6 +26,52 @@ size_t get_current_rss() {
     return (size_t)rss * (size_t)sysconf(_SC_PAGESIZE);
 }
 
+void test_numa() {
+    // Check if NUMA is available on this system
+    if (numa_available() == -1) {
+        std::cerr << "NUMA not supported on this system." << std::endl;
+        return;
+    }
+
+    // We'll allocate on Node 0 for this test
+    int target_node = 0;
+    std::cout << "Testing NUMA (numa_alloc_onnode) on Node " << target_node << std::endl;
+
+    void **ptr_array = new void*[NUM_ALLOCS];
+    auto start_time = std::chrono::high_resolution_clock::now();
+    size_t start_mem = get_current_rss();
+
+    for (size_t i = 0; i < NUM_ALLOCS; ++i) {
+        // numa_alloc_onnode is similar to malloc but pins to a specific NUMA node
+        void* ptr = numa_alloc_onnode(ALLOC_SIZE, target_node);
+        if (ptr == nullptr) {
+            std::cerr << "Allocation failed at index " << i << std::endl;
+            break;
+        }
+        ((char*)ptr)[0] = 1; // Touch memory to ensure physical page backing
+        ptr_array[i] = ptr;
+    }
+
+    size_t end_mem = get_current_rss();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    
+    double time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    size_t mem_diff = (end_mem > start_mem) ? (end_mem - start_mem) : 0;
+    size_t requested_total = NUM_ALLOCS * ALLOC_SIZE;
+
+    std::cout << "Time Elapsed:       " << time_ms << " ms" << std::endl;
+    std::cout << "RSS Growth:         " << mem_diff << " bytes" << std::endl;
+    std::cout << "Requested Memory:   " << requested_total << " bytes" << std::endl;
+    std::cout << "Est. Overhead:      " << ((double)mem_diff - (double)requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
+
+    // Clean up
+    for (size_t i = 0; i < NUM_ALLOCS; ++i) {
+        // Use numa_free for memory allocated with numa_alloc functions
+        numa_free(ptr_array[i], ALLOC_SIZE);
+    }
+    delete[] ptr_array;
+}
+
 void test_malloc(){
     std::cout<<"Testing Malloc allocator"<<std::endl;
     void **ptr_array = new void*[NUM_ALLOCS];
@@ -42,31 +88,17 @@ void test_malloc(){
     double time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
     size_t mem_diff = (end_mem > start_mem) ? (end_mem - start_mem) : 0;
     size_t requested_total = NUM_ALLOCS * ALLOC_SIZE;
+    std::cout << "Time Elapsed:       " << time_ms << " ms" << std::endl;
 	std::cout << "RSS Growth:         " << mem_diff << " bytes" << std::endl;
     std::cout << "Requested Memory:   " << requested_total << " bytes" << std::endl;
-    std::cout << "Est. Overhead:      " << (double)(mem_diff - requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
+    std::cout << "Est. Overhead:      " << ((double)mem_diff - (double)requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
 
-	std::cout << "Time Elapsed:       " << time_ms << " ms" << std::endl;
-    
-    //Clean up
-    auto free_start_time = std::chrono::high_resolution_clock::now();
-    size_t free_start_mem = get_current_rss();
-    for(int i=0; i<NUM_ALLOCS; i++){
+	
+    // Clean up
+    for(size_t i=0; i<NUM_ALLOCS; i++){
         free(ptr_array[i]);
     }
     delete[] ptr_array;
-    size_t free_end_mem = get_current_rss();
-    auto free_end_time = std::chrono::high_resolution_clock::now();
-    double free_time_ms = std::chrono::duration<double, std::milli>(free_end_time - free_start_time).count();
-    size_t free_mem_diff = (free_start_mem > free_end_mem) ? (free_start_mem - free_end_mem) : 0;
-
-    std::cout << "RSS Decreament:         " <<free_mem_diff << " bytes" << std::endl;
-    std::cout << "Requested Memory:   " << requested_total << " bytes" << std::endl;
-    std::cout << "Est. Overhead:      " << (double)(free_mem_diff - requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
-
-	std::cout << "Time Elapsed:       " << free_time_ms << " ms" << std::endl;
- 
-
 }
 
 
@@ -93,53 +125,66 @@ void test_umf(){
 
 	std::cout << "RSS Growth:         " << mem_diff << " bytes" << std::endl;
     std::cout << "Requested Memory:   " << requested_total << " bytes" << std::endl;
-    std::cout << "Est. Overhead:      " << (double)(mem_diff - requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
-    //Clean up
-   
-
-    auto free_start_time = std::chrono::high_resolution_clock::now();
-    size_t free_start_mem = get_current_rss();
-
-    for(int i=0; i<NUM_ALLOCS; ++i) {
+    std::cout << "Est. Overhead:      " << ((double)mem_diff - (double)requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
+    // Clean up
+    for(size_t i=0; i<NUM_ALLOCS; ++i) {
         umf_free(0,ptr_array[i]);
     }
     delete[] ptr_array;
-    size_t free_end_mem = get_current_rss();
-    auto free_end_time = std::chrono::high_resolution_clock::now();
-    double free_time_ms = std::chrono::duration<double, std::milli>(free_end_time - free_start_time).count();
-    size_t free_mem_diff = (free_start_mem > free_end_mem) ? (free_start_mem - free_end_mem) : 0;
-
-    std::cout << "RSS Decreament:         " <<free_mem_diff << " bytes" << std::endl;
-    std::cout << "Requested Memory:   " << requested_total << " bytes" << std::endl;
-    std::cout << "Est. Overhead:      " << (double)(free_mem_diff - requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
-	std::cout << "Time Elapsed:       " << free_time_ms << " ms" << std::endl;
 }
 
 
 
 
+void test_jemalloc(){
+    std::cout<<"Testing jemalloc allocator (mallocx)"<<std::endl;
+    void **ptr_array = new void*[NUM_ALLOCS];
+    auto start_time = std::chrono::high_resolution_clock::now();
+    size_t start_mem = get_current_rss();
+    for(size_t i=0; i < NUM_ALLOCS; ++i) {
+        void* ptr = mallocx(ALLOC_SIZE, 0);   // jemalloc's explicit API (unambiguously jemalloc)
+        ((char*)ptr)[0] = 1;
+        ptr_array[i] = ptr;
+    }
+    size_t end_mem = get_current_rss();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    double time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    size_t mem_diff = (end_mem > start_mem) ? (end_mem - start_mem) : 0;
+    size_t requested_total = NUM_ALLOCS * ALLOC_SIZE;
+    std::cout << "Time Elapsed:       " << time_ms << " ms" << std::endl;
+    std::cout << "RSS Growth:         " << mem_diff << " bytes" << std::endl;
+    std::cout << "Requested Memory:   " << requested_total << " bytes" << std::endl;
+    std::cout << "Est. Overhead:      " << ((double)mem_diff - (double)requested_total) / NUM_ALLOCS << " bytes/object" << std::endl;
+
+    // Clean up
+    for(size_t i=0; i<NUM_ALLOCS; ++i) {
+        dallocx(ptr_array[i], 0);
+    }
+    delete[] ptr_array;
+}
 
 
-int main(int argc, char* argv[]){
-
+int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <malloc|umf> [count] [size]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <malloc|jemalloc|umf|numa> [count] [size]" << std::endl;
         return 1;
     }
+    
     std::string mode = argv[1];
-
     if (argc >= 3) NUM_ALLOCS = std::atol(argv[2]);
     if (argc >= 4) ALLOC_SIZE = std::atol(argv[3]);
 
-
-    if(mode=="malloc"){
+    if (mode == "malloc") {
         test_malloc();
-    }else if(mode=="umf"){
+    } else if (mode == "jemalloc") {
+        test_jemalloc();
+    } else if (mode == "umf") {
         test_umf();
+    } else if (mode == "numa") {
+        test_numa();
+    } else {
+        std::cerr << "Unknown mode: " << mode << std::endl;
     }
-    
-    umf_alloc_init();
-    void* ptr =umf_alloc(0, 8, 8);
-    umf_free(0, ptr);
+
     return 0;
 }

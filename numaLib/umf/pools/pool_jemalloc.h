@@ -48,7 +48,7 @@ typedef struct umf_memory_pool_t {
 /// @brief Configuration of Jemalloc Pool
 typedef struct umf_jemalloc_pool_params_t {
     /// Set to true if umfMemoryProviderFree() should never be called.
-    bool disable_provider_free;
+    bool disable_provider_free ;
 } umf_jemalloc_pool_params_t;
 
 umf_memory_pool_ops_t *umfJemallocPoolOps(void);

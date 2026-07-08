@@ -32,6 +32,9 @@ struct WorkloadConfig {
 
 WorkloadConfig selectWorkload(const string &w);
 
+// Select the key-placement hash: 0 = djb2 (default), 1 = mix. Call before threads spawn.
+void set_hash_mode(int mode);
+
 void global_init(int num_threads, int duration, int interval);
 
 void numa_hash_table_init(int thread_id, int numa_node, std::string DS_config, int buckets, int num_tables, uint64_t num_keys, int num_total_threads);
@@ -46,7 +49,8 @@ void ycsb_test(
     uint64_t num_keys,
     int local_pct,
     int interval,
-    int num_tables
+    int num_tables,
+    bool use_zipfian
 );
 
 void run_ycsb_benchmark(

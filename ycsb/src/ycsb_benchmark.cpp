@@ -47,13 +47,11 @@ pthread_barrier_t bar;
 pthread_barrier_t init_bar;
 
 unsigned long prefill_hash(const char* key) {
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *key++)) {
-        hash = ((hash << 5) + hash) + c; // hash * 33 + c
-    }
-    return hash;
+    return key_hash(key);   // djb2 or mix, per --hash
 }
+
+// Set once from main() before any threads spawn (0 = djb2, 1 = mix).
+void set_hash_mode(int mode) { hash_mode() = mode; }
 
 void global_init(int num_threads, int duration, int interval) {
 	pthread_barrier_init(&bar, NULL, num_threads);
@@ -67,6 +65,7 @@ void global_init(int num_threads, int duration, int interval) {
     global_successful_init_inserts=0;
     global_successful_inserts=0;
 }
+
 void numa_hash_table_init(int thread_id,
                           int node,
                           std::string DS_config,
@@ -128,7 +127,7 @@ void numa_hash_table_init(int thread_id,
         }
     }
     pthread_barrier_wait(&init_bar);
-    return;
+    // PREFILL ENABLED: removed the early `return;` so the prefill loop below runs.
     // ------------------ RNG (UNIQUE PER THREAD) ------------------
     std::random_device rd;
     std::mt19937_64 rng(rd() ^ (node << 16) ^ thread_id);
@@ -179,6 +178,7 @@ void numa_hash_table_init(int thread_id,
     // globalLK->unlock();
 
     pthread_barrier_wait(&init_bar);
+
     #ifdef DEBUG
         if (thread_id == 0) {
             std::cout << "Prefill complete. Total inserts = "  << global_successful_init_inserts << std::endl;
@@ -200,7 +200,8 @@ void ycsb_test(
     uint64_t num_keys,
     int local_pct,
     int interval,
-    int num_tables
+    int num_tables,
+    bool use_zipfian
 )
 {
 
@@ -227,11 +228,12 @@ void ycsb_test(
     uniform_int_distribution<uint64_t> key_dist(0, num_keys-1);
     int successful_inserts = 0;
 	while (duration_cast<seconds>(steady_clock::now() - startTimer).count() < duration) {
-		//uint64_t key_id = gen->Next();
-        uint64_t key_id = key_dist(rng);
+        // Key distribution selected via --mix (zipfian = YCSB hot-key skew, uniform = flat).
+        // Raw zipfian rank used directly as the key (low ranks are hot / clustered).
+        uint64_t key_id = use_zipfian ? gen->Next() : key_dist(rng);
         string key = "key" + to_string(key_id);
         int locality_choice = locality_dist(rng);
-        int ht_choice = prefill_hash(key.c_str())%num_tables;
+        int ht_choice = key_hash(key.c_str())%num_tables;
 
         if (numa_node == 0) {
             if (locality_choice <= local_pct) {

@@ -13,7 +13,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
-
+#include "numa_nodemap.hpp"
 #include <numa.h>
 #include <numaif.h>
 #include <pthread.h>
@@ -62,7 +62,8 @@ private:
         // Get the NUMA node's CPU bitmask
         bitmask* bm = numa_allocate_cpumask();
         if (!bm) throw std::runtime_error("numa_allocate_cpumask failed");
-        if (numa_node_to_cpus(node, bm) != 0) {
+        unsigned phys = numa_node_map(static_cast<unsigned>(node));
+        if (numa_node_to_cpus(phys, bm) != 0) {
             numa_free_cpumask(bm);
             throw std::system_error(errno, std::generic_category(), "numa_node_to_cpus");
         }

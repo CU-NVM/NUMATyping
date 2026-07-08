@@ -26,6 +26,7 @@ def set_autonuma(desired: int) -> None:
     numa_path = Path("/proc/sys/kernel/numa_balancing")
 
     if not numa_path.exists():
+        # Just a warning instead of a crash, in case running on non-Linux for testing
         print("Warning: /proc/sys/kernel/numa_balancing not found. Skipping AutoNUMA toggle.")
         return
 
@@ -35,15 +36,18 @@ def set_autonuma(desired: int) -> None:
     try:
         cur = int(numa_path.read_text().strip())
     except PermissionError:
+        # If we can't read, we likely can't write, so proceed to sudo try
         cur = -1 
 
     if cur == desired:
         print(f"AutoNUMA already {cur} (no change).")
         return
 
+    # Try direct write
     try:
         numa_path.write_text(str(desired))
     except PermissionError:
+        # Fallback to sudo sysctl
         cmd = ["sudo", "sysctl", "-w", f"kernel.numa_balancing={desired}"]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
@@ -62,12 +66,19 @@ def compile_experiment(experiment_folder: Path, root_dir: Path, UMF: bool) -> No
         raise RuntimeError(f"Experiment folder does not exist: {experiment_folder}")
 
     print(f"Compiling in: {experiment_folder}")
+    print(f"Using ROOT_DIR: {root_dir}")
+
+    # Clean
     subprocess.run(["make", "clean"], cwd=experiment_folder, check=True)
 
+    # Build command
+    # We pass ROOT_DIR to make so it overrides the internal default
     build_cmd = ["make", f"ROOT_DIR={root_dir}"]
+    
     if UMF:
         build_cmd.append("UMF=1")
 
+    # Run the build
     subprocess.run(build_cmd, cwd=experiment_folder, check=True)
 
 def convert_perf_to_csv(input_file):
@@ -82,8 +93,7 @@ def convert_perf_to_csv(input_file):
     with open(input_path, "r") as f:
         lines = f.readlines()
 
-    # UPDATED REGEX: Matches ls_dmnd_fills_from_sys.mem_io_local and .mem_io_remote
-    pattern = re.compile(r"^\s*(\d+\.\d+)\s+([\d,]+)\s+ls_dmnd_fills_from_sys\.(mem_io_remote|mem_io_local)")
+    pattern = re.compile(r"^\s*(\d+\.\d+)\s+([\d,]+)\s+ocr\.demand_data_rd\.(remote_dram|local_dram)")
 
     time_to_values = {}
 
@@ -95,7 +105,7 @@ def convert_perf_to_csv(input_file):
             count_val = int(count.replace(",", ""))
 
             if time_val not in time_to_values:
-                time_to_values[time_val] = {"mem_io_remote": 0, "mem_io_local": 0}
+                time_to_values[time_val] = {"remote_dram": 0, "local_dram": 0}
 
             time_to_values[time_val][event_type] = count_val
 
@@ -103,8 +113,7 @@ def convert_perf_to_csv(input_file):
         writer = csv.writer(f)
         writer.writerow(["Time", "Remote DRAM Accesses", "Local DRAM Accesses"])
         for t, vals in sorted(time_to_values.items()):
-            # Map internal keys back to readable CSV columns
-            writer.writerow([t, vals["mem_io_remote"], vals["mem_io_local"]])
+            writer.writerow([t, vals["remote_dram"], vals["local_dram"]])
 
     print(f"Converted {input_file} -> {output_csv}")
     return output_csv
@@ -116,21 +125,24 @@ def convert_perf_to_csv(input_file):
 def perf_array_experiment(experiment_folder: Path, output_dir: Path) -> None:
     ensure_dir(output_dir)
 
-    th_config = "numa"
+    # Fixed array parameters
+    th_config = "reverse"
     ds_config = "numa"
-    t = 128
+    t = 80
     n = 1000
     u = 120
-    s = 2000000
+    s = 1000000
     i = 10
 
     array_bin = experiment_folder / "bin" / "array"
 
     if not array_bin.exists():
-        raise FileNotFoundError(f"Binary not found at {array_bin}.")
+        raise FileNotFoundError(f"Binary not found at {array_bin}. Did compilation fail?")
 
+    # Full array command
+    # Using 'int(t)' etc ensures we don't accidentally pass floats if variables change type later
     array_cmd_str = (
-        f"numactl --cpunodebind=0,7 --membind=0,7 "
+        f"numactl --cpunodebind=0,1 --membind=0,1 "
         f"{array_bin} "
         f"--th_config={th_config} "
         f"--DS_config={ds_config} "
@@ -139,44 +151,74 @@ def perf_array_experiment(experiment_folder: Path, output_dir: Path) -> None:
 
     perf_output_file = output_dir / f"{th_config}_{ds_config}_{n}_{s}_perf.data"
 
-    # UPDATED EVENTS: Replaced Intel OCR with AMD ls_dmnd_fills_from_sys
+    # Construct the perf command
+    # -I 2000 means print stats every 2000ms
     perf_cmd = [
-        "perf", "stat",
-        "-e", "ls_dmnd_fills_from_sys.mem_io_remote",
-        "-e", "ls_dmnd_fills_from_sys.mem_io_local",
+        "sudo", "perf", "stat",
+        "-e", "ocr.demand_data_rd.remote_dram",
+        "-e", "ocr.demand_data_rd.local_dram",
         "-I", "2000",
         "-o", str(perf_output_file),
         "--", "bash", "-c", array_cmd_str
     ]
 
-    print("Running perf stat on array (AMD Zen Events)...")
+    print("Running perf stat on array...")
+    print(f"Command: {' '.join(perf_cmd)}")
+    
     try:
         subprocess.run(perf_cmd, check=True)
+        print(f"Perf output saved to {perf_output_file}")
+        # Convert perf output to CSV
         convert_perf_to_csv(perf_output_file)
     except subprocess.CalledProcessError as e:
         print(f"Error running perf: {e}")
 
 # ----------------------------------------------------
-# Main execution logic remains the same
+# main
 # ----------------------------------------------------
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run array perf experiment.")
     parser.add_argument("--UMF", action="store_true", help="Compile with UMF=1")
     parser.add_argument("--AN", type=int, choices=[0, 1], default=1, help="AutoNUMA (0 or 1)")
     
+    # 1. New Argument for ROOT_DIR
+    # Defaults to $HOME/NUMATyping if not provided
     default_root = Path.home() / "NUMATyping"
-    parser.add_argument("--root_dir", type=Path, default=default_root)
+    parser.add_argument(
+        "--root_dir", 
+        type=Path, 
+        default=default_root, 
+        help=f"Path to project root (default: {default_root})"
+    )
 
     args = parser.parse_args()
+
+    # Resolve paths based on args.root_dir
     root_path = args.root_dir.resolve()
     experiment_path = root_path / "Array"
     
     if not root_path.exists():
-        print(f"Error: Root directory does not exist: {root_path}")
+        print(f"Error: The provided root directory does not exist: {root_path}")
         sys.exit(1)
 
+    # 1) AutoNUMA
+    set_autonuma(args.AN)
+
+    # Determine Output path based on AutoNUMA state
     an_folder = "AN_on" if args.AN == 1 else "AN_off"
     output_dir = root_path / "Perfs" / an_folder / "array"
 
-    compile_experiment(experiment_path, root_path, args.UMF)
+    # 2) Build
+    print("Compiling experiment...")
+    try:
+        compile_experiment(experiment_path, root_path, args.UMF)
+    except Exception as e:
+        print(f"Compilation failed: {e}")
+        sys.exit(1)
+
+    # 3) Run Perf
+    print("Running array + Perf...")
     perf_array_experiment(experiment_path, output_dir)
+
+    print(f"All done. Results saved under: {output_dir}")

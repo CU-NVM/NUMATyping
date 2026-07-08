@@ -1,0 +1,8 @@
+2026-07-07 19:45:26 | START campaign=2026-07-07_example commit=4ba01aef AN=0
+2026-07-07 19:45:26 | [START numa/numa]
+[config] hash=djb2 mix=uniform
+2026-07-07 19:45:43 | [DONE  numa/numa] rc=0
+2026-07-07 19:45:43 | [START numa/regular]
+[config] hash=djb2 mix=uniform
+2026-07-07 19:46:01 | [DONE  numa/regular] rc=0
+2026-07-07 19:46:01 | DONE -> /home/kiwo9430/NUMATyping/Result/ycsb/AN_off/2026-07-07_example

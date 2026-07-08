@@ -82,7 +82,7 @@ std::string utils::getNumaAllocatorCode(std::string classDecl, std::string nodeI
         #ifdef UMF
             p= umf_alloc()"+ nodeID + R"( ,sizeof()"+classDecl +R"(),alignof()"+ classDecl + R"());
         #else
-            p = numa_alloc_onnode(sz* sizeof()"+classDecl+R"(), )"+ nodeID +R"();
+            p = numa_alloc_onnode(sz, )"+ nodeID +R"();
         #endif
         
         if (p == nullptr) {
@@ -97,7 +97,7 @@ std::string utils::getNumaAllocatorCode(std::string classDecl, std::string nodeI
         #ifdef UMF
             p= umf_alloc()"+ nodeID + R"( ,sizeof()"+classDecl +R"(),alignof()"+ classDecl + R"());
         #else
-            p = numa_alloc_onnode(sz* sizeof()"+classDecl+R"(), )"+ nodeID +R"();
+            p = numa_alloc_onnode(sz, )"+ nodeID +R"();
         #endif
         
         if (p == nullptr) {
@@ -420,6 +420,16 @@ void RecursiveNumaTyper::specializeClass(const clang::ASTContext& Context, const
  * @param nodeID Target NUMA node ID
  */
 void RecursiveNumaTyper::constructSpecialization(const clang::ASTContext& Context,const clang::CXXRecordDecl* classDecl, llvm::APInt nodeID){
+    // Never specialize standard-library / system types (e.g. std::mutex,
+    // std::string). They have no user-level allocations to redirect; generating
+    // a specialization would rewrite system headers, make the type virtual, and
+    // recurse into libc/pthread internals. Skipping them lets numa<T,k> fall
+    // back to the generic `class numa<T,NodeID> : public T` template in
+    // numatype.hpp, which simply places the (unmodified) object on the node.
+    if (classDecl->isInStdNamespace() ||
+        rewriter.getSourceMgr().isInSystemHeader(classDecl->getLocation())) {
+        return;
+    }
     makeVirtual(classDecl);
     uint64_t nodeIDVal = nodeID.getLimitedValue();
     rewriteLocation = classDecl->getEndLoc();

@@ -417,8 +417,7 @@ static umf_result_t op_initialize(umf_memory_provider_handle_t provider,
     assert(out_pool);
 
     umf_jemalloc_pool_params_t *je_params =
-        (umf_jemalloc_pool_params_t *)params;
-
+        (umf_jemalloc_pool_params_t *)params;                           
     extent_hooks_t *pHooks = &arena_extent_hooks;
     size_t unsigned_size = sizeof(unsigned);
     int err;

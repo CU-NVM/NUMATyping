@@ -47,12 +47,7 @@ HashTable::~HashTable() {
 }
 
 int HashTable::hash(const char* key) {
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *key++)) {
-        hash = ((hash << 5) + hash) + c; // hash * 33 + c
-    }
-    return hash % bucket_count;
+    return key_hash(key) % bucket_count;   // djb2 or mix, per --hash
 }
 
 bool HashTable::insert(const char* word){

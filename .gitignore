@@ -11,5 +11,15 @@ enwiki-latest-pages-articles.xml.bz2
 book/
 Output/*
 
+# result data & perf captures -- keep on disk, never commit (too big / not code)
+FlameGraphs/
+Old_Results/
+Campaigns/
+Runs/
+
+# python bytecode caches
+__pycache__/
+*.pyc
+
 
 

@@ -21,6 +21,7 @@
 #include <umf/providers/provider_level_zero.h>
 #include <umf/providers/provider_os_memory.h>
 
+#include "numa_nodemap.hpp"
 #include <numa.h>
 #include <numaif.h>
 #include <stdio.h>
@@ -48,7 +49,8 @@ int createMemoryProviderFromArray(umf_memory_provider_handle_t *hProvider,
 
     // Create a memspace - memspace is a list of memory sources.
     // In this example, we create a memspace that contains single numa node;
-    result = umfMemspaceCreateFromNumaArray(&numa, 1, &hMemspace);
+    unsigned phys = numa_node_map(numa);
+    result = umfMemspaceCreateFromNumaArray(&phys, 1, &hMemspace);
     if (result != UMF_RESULT_SUCCESS) {
         fprintf(stderr, "umfMemspaceCreateFromNumaArray() failed.\n");
         return -1;
@@ -91,7 +93,9 @@ void umf_alloc_init() {
     umf_memspace_handle_t hMemspace= NULL;
     umf_mempolicy_handle_t hPolicy = NULL;
     for (unsigned i = 0; i < NUM_NODES; ++i) {
-        auto r = umfMemspaceCreateFromNumaArray(&i, 1, &hMemspace);
+        
+        unsigned phys = numa_node_map(i);
+        auto r = umfMemspaceCreateFromNumaArray(&phys, 1, &hMemspace);
         if (r != UMF_RESULT_SUCCESS) {
             throw std::runtime_error("Could not create space");
         }

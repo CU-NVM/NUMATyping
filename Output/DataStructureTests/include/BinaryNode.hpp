@@ -29,12 +29,19 @@ public:
 	//< Inherits int getData() from Node 
 
 
-	BinaryNode() : data(0), leftChild(NULL), rightChild(NULL)
-	{}
+	BinaryNode()
+	{
+        data=0;
+        leftChild = NULL;
+        rightChild = NULL;
+    }
 
 	BinaryNode(int data) 
-	: data(data), leftChild(NULL), rightChild(NULL)
-	{}
+	{
+        this->data =data;
+        leftChild = NULL;
+        rightChild = NULL;
+    }
 
 	virtual ~BinaryNode()
 	{
@@ -107,9 +114,15 @@ public:
         #endif
     }
 public:
-numa (): data(), leftChild(), rightChild(){
+numa (){
+    this->data = 0;
+    this->leftChild = __null;
+    this->rightChild = __null;
 }
-numa (int data): data(), leftChild(), rightChild(){
+numa (int data){
+    this->data = data;
+    this->leftChild = __null;
+    this->rightChild = __null;
 }
 virtual ~numa()
 {
@@ -192,9 +205,15 @@ public:
         #endif
     }
 public:
-numa (): data(), leftChild(), rightChild(){
+numa (){
+    this->data = 0;
+    this->leftChild = __null;
+    this->rightChild = __null;
 }
-numa (int data): data(), leftChild(), rightChild(){
+numa (int data){
+    this->data = data;
+    this->leftChild = __null;
+    this->rightChild = __null;
 }
 virtual ~numa()
 {
