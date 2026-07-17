@@ -24,29 +24,36 @@ inline uint64_t mix64(uint64_t x) {
     return x;
 }
 
+// djb2 over the raw bytes of a 64-bit key: weak avalanche, so near-sequential
+// keys stay near-sequential -- the "clustered" placement option.
+inline unsigned long djb2_hash_u64(uint64_t k) {
+    unsigned long h = 5381;
+    for (int i = 0; i < 8; ++i) { h = ((h << 5) + h) + (unsigned char)(k & 0xFF); k >>= 8; }
+    return h;
+}
+
 // The hash every table/bucket selector should use.
-inline unsigned long key_hash(const char* s) {
-    unsigned long h = djb2_hash(s);
-    return hash_mode() ? (unsigned long)mix64(h) : h;
+// hash_mode(): 0 = djb2 (weak / clustered), 1 = mix64 (strong avalanche).
+inline uint64_t key_hash(uint64_t k) {
+    return hash_mode() ? mix64(k) : (uint64_t)djb2_hash_u64(k);
 }
 
 class HashNode {
 public:
-    char* key;
-    int count;
+    uint64_t key;
+    char* value;          // payload buffer, `payload_size` bytes
     HashNode* next;
 
-    HashNode(const char* word);
-
+    HashNode(uint64_t k, int payload_size);
     ~HashNode();
 };
 
-HashNode::HashNode(const char* word) {
-        count = 1;
-        next =nullptr;
-        key = new char[strlen(word) + 1];
-        strcpy(key, word);
-    }
+HashNode::HashNode(uint64_t k, int payload_size) {
+    key = k;
+    next = nullptr;
+    value = new char[payload_size];
+    std::memset(value, (int)(k & 0xFF), payload_size);
+}
 HashNode::~HashNode() {
-        delete[] key;
-    }
+    delete[] value;
+}

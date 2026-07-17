@@ -11,13 +11,16 @@ binary, CSV header, per-config command, and the benchmark's own CLI parameters
 (added dynamically).  Add a benchmark by editing benchmarks.py only.
 
 Output:
-    Campaigns/<bench>/<slug>/AN_<mode>/
-        manifest.md, git_diff.txt, <bench>_<workload>.csv/.log
-    The experiment (slug) is the folder; AN_off/ and AN_on/ are siblings inside
-    it, so an AutoNUMA on/off pair lives together.  A pair must share the same
-    commit AND the same config -- both are enforced by refusing to write a run
-    that disagrees with its sibling -- which is what makes the on/off comparison
-    valid.  The run datetime lives in the manifest, not the folder name.
+    Campaigns/<bench>/<slug>/
+        manifest.md, git_diff.txt              <- shared experiment identity
+        AN_off/  <bench>_<workload>.csv/.log   <- data only
+        AN_on/   <bench>_<workload>.csv/.log
+    The experiment (slug) owns ONE manifest: the shared identity (commit, params,
+    configs, workloads) plus a "Runs" list that each AutoNUMA run appends to.
+    Commit and config are enforced identical across every run of the experiment
+    -- a run that disagrees with the existing manifest is refused -- which is what
+    makes the AN_off/AN_on comparison valid.  The AN folders hold only data (the
+    AutoNUMA state is the folder name; the run datetime lives in the Runs list).
     plus a git tag  campaign/<slug>  on the current HEAD.
 
 The generic helpers below (autonuma/git/machine/build/run_config/manifest) are
@@ -112,27 +115,33 @@ def run_config(argv, an_value, out_path, log_path, cwd=None):
         return subprocess.run(full, stdout=out, stderr=log, cwd=cwd).returncode
 
 
-def write_manifest(path, *, bench, binary, purpose, git_hash, git_subject,
-                   machine, an_value, params, configs, workloads, slug):
+def write_or_append_manifest(path, *, bench, binary, purpose, git_hash, git_subject,
+                             machine, an_value, params, configs, workloads, slug):
+    """Shared experiment manifest at the slug level.  The first run writes the
+    identity block + the Runs list; a later run (already verified by the guards to
+    match on commit + config) just appends its own line to the Runs list."""
     an_str = "on" if an_value == 1 else "off"
+    run_line = (f"- AN_{an_str} -- {datetime.datetime.now():%Y-%m-%d %H:%M:%S} "
+                f"-- kernel {machine['kernel']}\n")
+    if path.exists():                                   # a sibling AN run already created it
+        with open(path, "a") as f:
+            f.write(run_line)
+        return
     with open(path, "w") as f:
         f.write(f"# {bench} campaign -- {purpose or 'run'}\n\n")
         f.write(f"- **experiment (slug):** {slug}\n")
-        f.write(f"- **date:** {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n")
         f.write(f"- **purpose:** {purpose}\n")
         f.write(f"- **benchmark:** {bench}  (`{binary}`)\n")
         f.write(f"- **git commit:** {git_hash} -- {git_subject}\n")
         f.write(f"- **machine:** {machine['host']} - {machine['cpu']} - "
-                f"{machine['nodes']} NUMA nodes - kernel {machine['kernel']}\n")
-        f.write(f"- **AutoNUMA:** numa_balancing={an_value} ({an_str})\n\n")
+                f"{machine['nodes']} NUMA nodes - kernel {machine['kernel']}\n\n")
         f.write("## Parameters\n| param | value |\n|-------|-------|\n")
         for k, v in params.items():
             f.write(f"| {k} | {v} |\n")
         f.write(f"| configs | {' '.join(configs)} |\n")
         f.write(f"| workloads | {', '.join(workloads)} |\n\n")
-        f.write("## Files\n- `manifest.md` -- this file\n"
-                "- `git_diff.txt` -- `git show HEAD` of the committed code\n"
-                "- `*.csv` / `*.log` -- results\n")
+        f.write("## Runs\n")                            # each AN run appends one line here
+        f.write(run_line)
 
 
 def read_manifest_commit(manifest_path):
@@ -217,52 +226,53 @@ def main():
     binary    = str(ROOT / bench["binary"])
     workloads = args.workloads or bench["workloads"]
     exp_dir   = ROOT / "Campaigns" / bench_name / args.slug   # experiment = slug
-    outdir    = exp_dir / an_folder                           # AN_off/ and AN_on/ are siblings
-    other_an  = "AN_on" if an_folder == "AN_off" else "AN_off"
+    outdir    = exp_dir / an_folder                           # AN_off/ , AN_on/ : data only
+    manifest  = exp_dir / "manifest.md"                       # shared, at the slug level
     params    = benchmarks.extract_params(args, bench_name)
 
-    # ---- guards: don't clobber; keep an on/off pair identical (commit + config) ----
+    # ---- guards: don't clobber; every run of an experiment shares commit + config ----
     if outdir.exists() and any(outdir.iterdir()) and not args.force:
         sys.exit(f"Refusing: {outdir} already exists and is non-empty.\n"
                  f"Pick a new --slug, or pass --force to overwrite.")
-    sib_manifest = exp_dir / other_an / "manifest.md"
-    sib_commit   = read_manifest_commit(sib_manifest)
-    if sib_commit and sib_commit != git_hash and not args.force:
-        sys.exit(f"Refusing: {other_an} for '{args.slug}' ran at commit {sib_commit}, "
+    prev_commit = read_manifest_commit(manifest)              # None on the first run
+    if prev_commit and prev_commit != git_hash and not args.force:
+        sys.exit(f"Refusing: experiment '{args.slug}' was started at commit {prev_commit}, "
                  f"but HEAD is {git_hash}.\n"
-                 f"An AutoNUMA on/off pair must share a commit to be comparable. "
+                 f"Every run of an experiment must share a commit to be comparable. "
                  f"Re-run on that commit, use a new --slug, or pass --force.")
-    # every config parameter must match the sibling too -- not just the commit
+    # every config parameter must match the existing manifest too -- not just the commit
     cur_sig = {k: str(v) for k, v in params.items()}
     cur_sig["configs"]   = " ".join(args.configs)
     cur_sig["workloads"] = ", ".join(workloads)
-    sib_sig = read_manifest_params(sib_manifest)
-    if sib_sig:
-        diffs = sorted(k for k in set(sib_sig) | set(cur_sig)
-                       if sib_sig.get(k) != cur_sig.get(k))
+    prev_sig = read_manifest_params(manifest)
+    if prev_sig:
+        diffs = sorted(k for k in set(prev_sig) | set(cur_sig)
+                       if prev_sig.get(k) != cur_sig.get(k))
         if diffs and not args.force:
-            detail = "\n".join(f"    {k}: {other_an}={sib_sig.get(k)!r} vs this={cur_sig.get(k)!r}"
+            detail = "\n".join(f"    {k}: manifest={prev_sig.get(k)!r} vs this={cur_sig.get(k)!r}"
                                for k in diffs)
-            sys.exit(f"Refusing: config differs from the {other_an} sibling of '{args.slug}':\n"
-                     f"{detail}\nAn AutoNUMA on/off pair must share config to be comparable. "
+            sys.exit(f"Refusing: config differs from the existing '{args.slug}' manifest:\n"
+                     f"{detail}\nEvery run of an experiment must share config. "
                      f"Use a new --slug, or pass --force.")
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # ---- provenance: manifest + committed diff + tag ----
-    write_manifest(outdir / "manifest.md", bench=bench_name, binary=binary,
-                   purpose=args.purpose or args.slug, git_hash=git_hash,
-                   git_subject=subject, machine=machine_info(),
-                   an_value=an_value, params=params,
-                   configs=args.configs, workloads=workloads, slug=args.slug)
-    (outdir / "git_diff.txt").write_text(
-        subprocess.run(["git", "-C", str(ROOT), "show", "HEAD"],
-                       capture_output=True, text=True).stdout)
+    # ---- provenance: shared manifest (create or append a run) + committed diff + tag ----
+    is_new = not manifest.exists()
+    write_or_append_manifest(manifest, bench=bench_name, binary=binary,
+                             purpose=args.purpose or args.slug, git_hash=git_hash,
+                             git_subject=subject, machine=machine_info(),
+                             an_value=an_value, params=params,
+                             configs=args.configs, workloads=workloads, slug=args.slug)
+    diff_path = exp_dir / "git_diff.txt"
+    if not diff_path.exists():                                # same commit for every run
+        diff_path.write_text(subprocess.run(["git", "-C", str(ROOT), "show", "HEAD"],
+                                            capture_output=True, text=True).stdout)
     subprocess.run(["git", "-C", str(ROOT), "tag", "-f", f"campaign/{args.slug}"], capture_output=True)
 
     print(f"Campaign: {outdir}")
     print(f"  experiment '{args.slug}' | commit {git_hash} ({subject}) | AutoNUMA {an_folder}")
-    print(f"  paired with {other_an}: commit + config match ({sib_commit})\n" if sib_commit
-          else f"  (no {other_an} sibling yet)\n")
+    print("  (new experiment -- wrote manifest.md)\n" if is_new
+          else "  (existing experiment -- appended run to manifest.md; commit + config match)\n")
 
     # ---- the sweep ----
     cwd = str(ROOT / bench["cwd"]) if bench["cwd"] else None
