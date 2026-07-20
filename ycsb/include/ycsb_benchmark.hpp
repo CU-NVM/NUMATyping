@@ -59,7 +59,8 @@ void ycsb_test(
     int interval,
     int num_tables,
     bool use_zipfian,
-    int payload_size
+    int payload_size,
+    int warmup
 );
 
 void run_ycsb_benchmark(

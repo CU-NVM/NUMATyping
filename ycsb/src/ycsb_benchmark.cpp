@@ -166,7 +166,8 @@ void ycsb_test(
     int interval,
     int num_tables,
     bool use_zipfian,
-    int payload_size
+    int payload_size,
+    int warmup
 )
 {
 
@@ -182,10 +183,15 @@ void ycsb_test(
 	int64_t ops = 0;
 	thread_local vector<int64_t> localOps;
 	localOps.resize(duration/interval);
-	auto startTimer = std::chrono::steady_clock::now();
-	auto endTimer = startTimer + std::chrono::seconds(duration);
-    auto nextLogTime = startTimer + std::chrono::seconds(interval);
+	// Warm up untimed for `warmup` seconds so AutoNUMA / caches / THP reach steady
+	// state, THEN reset the counter and measure -- keeps the cold-start transient
+	// out of the reported throughput.
+	auto startTimer  = std::chrono::steady_clock::now();
+	auto warmupEnd   = startTimer + std::chrono::seconds(warmup);
+	auto endTimer    = warmupEnd  + std::chrono::seconds(duration);
+	auto nextLogTime = warmupEnd  + std::chrono::seconds(interval);
 	int intervalIdx = 0;
+	bool measuring = (warmup <= 0);
     mt19937 rng(random_device{}());
     uniform_int_distribution<int> op_dist(1, 100);
     uniform_int_distribution<int> locality_dist(1, 100);
@@ -317,11 +323,15 @@ void ycsb_test(
 		ops++;
 		if ((ops & (CLOCK_CHECK - 1)) == 0) {          // amortized clock read
 			auto now = std::chrono::steady_clock::now();
-			while (intervalIdx < (int)localOps.size() && now >= nextLogTime) {
-				localOps[intervalIdx++] = ops;
-				nextLogTime += std::chrono::seconds(interval);
+			if (!measuring) {                          // untimed warmup phase
+				if (now >= warmupEnd) { measuring = true; ops = 0; }   // -> start measuring
+			} else {
+				while (intervalIdx < (int)localOps.size() && now >= nextLogTime) {
+					localOps[intervalIdx++] = ops;
+					nextLogTime += std::chrono::seconds(interval);
+				}
+				if (now >= endTimer) break;
 			}
-			if (now >= endTimer) break;
 		}
     }
 

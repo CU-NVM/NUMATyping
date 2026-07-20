@@ -32,6 +32,7 @@ int duration = 20;
 int interval = 10;
 int num_tables = 10;
 int payload_size = 64;          // -p: bytes of per-record payload (char* value)
+int warmup = 0;                 // -W: untimed warmup seconds before measuring
 
 extern std::vector<int64_t> globalOps0;
 extern std::vector<int64_t> globalOps1;
@@ -84,6 +85,7 @@ void compile_options(int argc, char *argv[]) {
         {"mix",        required_argument, nullptr, 'm'},
         {"hash",       required_argument, nullptr, 'H'},
         {"payload",    required_argument, nullptr, 'p'},
+        {"warmup",     required_argument, nullptr, 'W'},
         {"help",       no_argument,       nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
@@ -91,7 +93,7 @@ void compile_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:c:d:i:a:m:H:p:h", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "t:b:w:u:k:z:c:d:i:a:m:H:p:W:h", long_options, &option_index)) != -1) {
         switch (opt) {
             case 't': num_threads = std::stoi(optarg); break;
             case 'b': bucket_count = std::stoi(optarg); break;
@@ -118,6 +120,7 @@ void compile_options(int argc, char *argv[]) {
                 }
                 break;
             case 'p': payload_size = std::stoi(optarg); break;
+            case 'W': warmup = std::stoi(optarg); break;
             case 'h':
                 cout << "Usage: ./runner [options]\n";
                 cout << "Options:\n";
@@ -133,6 +136,7 @@ void compile_options(int argc, char *argv[]) {
                 cout << "  -m, --mix <dist>         Key distribution: uniform or zipfian (default: uniform)\n";
                 cout << "  -H, --hash <fn>          Key placement hash: djb2 or mix (default: djb2)\n";
                 cout << "  -p, --payload <bytes>    Per-record payload size in bytes (default: 64)\n";
+                cout << "  -W, --warmup <sec>       Untimed warmup seconds before measuring (default: 0)\n";
                 exit(0);
             case '?':
                 cerr << "Unknown option or missing argument.\n";
@@ -243,7 +247,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node, use_zipfian, payload_size
+                interval, tables_per_node, use_zipfian, payload_size, warmup
             );
         } else {
             regular_thread0[i] = new thread(
@@ -252,7 +256,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node, use_zipfian, payload_size
+                interval, tables_per_node, use_zipfian, payload_size, warmup
             );
         }
     }
@@ -267,7 +271,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node, use_zipfian, payload_size
+                interval, tables_per_node, use_zipfian, payload_size, warmup
             );
         } else {
             regular_thread1[i] = new thread(
@@ -276,7 +280,7 @@ void run_ycsb_benchmark(
                 &thread_tasks[thread_id].cfg, 
                 generators[thread_id], num_keys, 
                 thread_tasks[thread_id].local_pct, 
-                interval, tables_per_node, use_zipfian, payload_size
+                interval, tables_per_node, use_zipfian, payload_size, warmup
             );
         }
     }

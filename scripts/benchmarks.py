@@ -32,8 +32,9 @@ def ycsb_argv(binary, th, ds, p):
             f"--th_config={th}", f"--DS_config={ds}",
             f"--mix={p['mix']}", f"--hash={p['hash']}",
             "-t", str(p["threads"]), "-b", str(p["buckets"]), "-a", str(p["tables"]),
-            f"--w={p['workload']}", "-u", str(p["duration"]),
-            "-k", str(p["keys"]), "-i", str(p["interval"]), "-p", str(p["payload"])]
+            f"--workload={p['workload']}", "-u", str(p["duration"]),
+            "-k", str(p["keys"]), "-i", str(p["interval"]), "-p", str(p["payload"]),
+            "-W", str(p["warmup"])]
 
 
 # ------------------------------------------------------- BST (DataStructureTests)
@@ -58,6 +59,7 @@ BENCHES = {
             param("mix",      str, "uniform", "key distribution: uniform | zipfian"),
             param("hash",     str, "djb2",    "placement hash: djb2 | mix"),
             param("payload",  int, 64,        "per-record payload bytes (char* value)"),
+            param("warmup",   int, 60,        "untimed warmup seconds before measuring"),
             param("threads",  int, 80,        "worker threads"),
             param("buckets",  int, 133300,    "hash buckets per table"),
             param("tables",   int, 1000,      "number of tables"),
