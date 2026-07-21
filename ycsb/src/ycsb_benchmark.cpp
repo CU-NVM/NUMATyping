@@ -119,33 +119,32 @@ void numa_hash_table_init(int thread_id,
     // PREFILL ENABLED: removed the early `return;` so the prefill loop below runs.
     int tables_per_node = num_tables;
     int actual_total_tables = tables_per_node * 2;
-    int local_rank = (node == 0) ? thread_id : thread_id - threads_per_node;
     uint64_t num_even = num_keys / 2;
     // ------------------ PREFILL LOOP (every other key) ------------------
-    // Prefill EXACTLY half the keyspace: the even keys 0, 2, 4, ..., num_keys-2
-    // -> insert(0), insert(2), insert(4), ...  so the odd half is guaranteed absent
-    // (inserts during the timed run hit fresh keys). Even key j (key_id = 2*j) is
-    // handled once, striding by this thread's per-node rank, and inserted only by a
-    // thread on the key's HOME node so first-touch stays node-local. The payload is
-    // allocated here (untimed).
-    for (uint64_t j = (uint64_t)local_rank; j < num_even; j += threads_per_node) {
+    // Prefill EXACTLY half the keyspace -- the even keys 0, 2, 4, ..., num_keys-2 --
+    // so the odd half stays absent (inserts during the timed run hit fresh keys).
+    //
+    // Each thread takes a GLOBAL slice of the even keys (stride by thread_id over
+    // ALL threads, so every even key is inserted exactly once) and inserts each into
+    // its HOME table regardless of which node the inserting thread runs on. Under
+    // regular DS the node + payload therefore first-touch on the *inserter's* node,
+    // not the key's home node -> ~half the records are mis-placed; under numa DS
+    // `numa<char,home>` still lands on the home node explicitly. That mis-placement
+    // is exactly what lets numa/numa beat numa/regular: naive first-touch places
+    // wrong, explicit NUMA typing places right.
+    for (uint64_t j = (uint64_t)thread_id; j < num_even; j += num_total_threads) {
         uint64_t key_id = 2 * j;
         int table_index = key_hash(key_id) % actual_total_tables;
 
-        if (node == 0) {
-            if (table_index < tables_per_node) {                 // key's home is node 0
-                ht_node0_locks[table_index]->lock();
-                ht_node0[table_index]->insert(key_id, payload_size);
-                ht_node0_locks[table_index]->unlock();
-            }
-        }
-        else if (node == 1) {
-            if (table_index >= tables_per_node) {                // key's home is node 1
-                int local_idx = table_index - tables_per_node;
-                ht_node1_locks[local_idx]->lock();
-                ht_node1[local_idx]->insert(key_id, payload_size);
-                ht_node1_locks[local_idx]->unlock();
-            }
+        if (table_index < tables_per_node) {                     // key's home is node 0
+            ht_node0_locks[table_index]->lock();
+            ht_node0[table_index]->insert(key_id, payload_size);
+            ht_node0_locks[table_index]->unlock();
+        } else {                                                 // key's home is node 1
+            int local_idx = table_index - tables_per_node;
+            ht_node1_locks[local_idx]->lock();
+            ht_node1[local_idx]->insert(key_id, payload_size);
+            ht_node1_locks[local_idx]->unlock();
         }
     }
     // all threads must finish prefilling before the timed workload starts

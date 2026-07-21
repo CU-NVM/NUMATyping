@@ -18,7 +18,7 @@ def param(name, typ, default, help=""):
 
 # ---------------------------------------------------------------------- YCSB
 YCSB_HEADER = ("Date, Time, Num_Tables, Num_Threads, Thread_Config, DS_Config, "
-               "Buckets, Workload, Duration, Num_Keys, Interval, "
+               "Mix, Buckets, Workload, Duration, Num_Keys, Interval, "
                "Ops_Node0, Ops_Node1, Total_Ops")
 
 YCSB_WORKLOADS = [
@@ -30,7 +30,7 @@ YCSB_WORKLOADS = [
 def ycsb_argv(binary, th, ds, p):
     return [binary,
             f"--th_config={th}", f"--DS_config={ds}",
-            f"--mix={p['mix']}", f"--hash={p['hash']}",
+            f"--mix={p['mix']}", f"--hash={p['hash']}", "-z", str(p["theta"]),
             "-t", str(p["threads"]), "-b", str(p["buckets"]), "-a", str(p["tables"]),
             f"--workload={p['workload']}", "-u", str(p["duration"]),
             "-k", str(p["keys"]), "-i", str(p["interval"]), "-p", str(p["payload"]),
@@ -56,8 +56,9 @@ BENCHES = {
         "workloads": YCSB_WORKLOADS,
         "cwd":       None,
         "params": [
-            param("mix",      str, "uniform", "key distribution: uniform | zipfian"),
-            param("hash",     str, "djb2",    "placement hash: djb2 | mix"),
+            param("mix",      str,   "uniform", "key distribution: uniform | zipfian"),
+            param("hash",     str,   "djb2",    "placement hash: djb2 | mix"),
+            param("theta",    float, 0.99,      "zipfian skew exponent (only used when mix=zipfian)"),
             param("payload",  int, 64,        "per-record payload bytes (char* value)"),
             param("warmup",   int, 60,        "untimed warmup seconds before measuring"),
             param("threads",  int, 80,        "worker threads"),

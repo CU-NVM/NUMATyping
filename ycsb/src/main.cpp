@@ -58,7 +58,7 @@ void print_function(int duration, int64_t ops0, int64_t ops1, int64_t totalOps) 
 	std::cout<<num_threads << ", ";
 	std::cout<<th_config << ", ";
 	std::cout<<DS_config << ", ";
-	// mix column intentionally omitted -- it's encoded in the output filename
+	std::cout<<key_mix << ", ";        // uniform | zipfian
     std::cout<<bucket_count<<", ";
     for(char _c : workload_key) std::cout << (_c==',' ? '-' : _c);  // ','->'-' so it's one CSV cell
     std::cout<<", ";
