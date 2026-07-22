@@ -26,20 +26,23 @@ USAGE:
     python3 bar_plot_ycsb.py [OPTIONS]
 
 CORE OPTIONS:
-    --AN [0|1|both]        AutoNUMA setting. 1 for AN_on/, 0 for AN_off/, 
+    --AN [on|off|both]     AutoNUMA setting. 'on' for AN_on/, 'off' for AN_off/,
                            or 'both' to place them side-by-side (Required).
-    --workloads STR [STR]  List of workloads to plot. 
+    --campaign SLUG        Read CSVs from Campaigns/ycsb/<slug>/AN_{on,off}/ and
+                           write the figures into Campaigns/ycsb/<slug>/ (next to
+                           manifest.md and git_diff.txt).
+    --normalize CFG        Config to normalize throughput against: regular/regular,
+                           numa/regular, or regular/numa (Default: numa/regular).
+    --workloads STR [STR]  List of workloads to plot.
                            (Default: AD, A, B, C, D, E, F configurations)
-    --perlmutter           Read from/save to 'Perlmutter/' directory, use 128 threads, 
+    --perlmutter           Read from/save to 'Perlmutter/' directory, use 128 threads,
                            and look for files ending in '_perl.csv'.
-    --short                Read from files ending with '_short.csv' and append 
-                           '_short' to output figure names.
     --ROOT_DIR PATH        Path to NUMATyping root (Default: ~/NUMATyping).
     --stop INT             Stop sampling at this duration in seconds (Default: 0 / all points).
 
 WORKFLOW EXAMPLE:
-    python3 bar_plot_ycsb.py --AN 1
-    python3 bar_plot_ycsb.py --AN both --perlmutter --short --stop 3600
+    python3 bar_plot_ycsb.py --AN on
+    python3 bar_plot_ycsb.py --campaign campaign01 --AN both
 """
     print(help_text)
     sys.exit(0)
@@ -48,7 +51,7 @@ WORKFLOW EXAMPLE:
 # Data Extraction Function
 # ============================================================================
 
-def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop_time, is_short, is_zipfian=False, baseline_config='regular-regular', suffix=''):
+def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop_time, is_zipfian=False, baseline_config='regular-regular', suffix='', campaign_mode=False):
     configs = ['numa-numa', 'numa-regular', 'regular-numa', 'regular-regular']
     raw_data = {c: [] for c in configs}
     x_labels = []
@@ -57,9 +60,7 @@ def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop
         wl = orig_wl
         # Clean off any extensions if user passed the literal filename
         if wl.startswith("ycsb_"): wl = wl[5:]
-        if wl.endswith("_perl_short.csv"): wl = wl[:-15]
-        elif wl.endswith("_short.csv"): wl = wl[:-10]
-        elif wl.endswith("_perl.csv"): wl = wl[:-9]
+        if wl.endswith("_perl.csv"): wl = wl[:-9]
         elif wl.endswith(".csv"): wl = wl[:-4]
 
         blocks = wl.replace('_', ',').split(',')
@@ -74,14 +75,16 @@ def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop
 
         safe_wl = wl.replace(',', '_')
         
-        # Build the proper file suffix based on flags
-        file_suffix = "_perl" if is_perlmutter else ""
-        if is_short:
-            file_suffix += "_short"
-        if is_zipfian:
-            file_suffix += "_zipfian"
-        file_suffix += suffix
-        file_suffix += ".csv"
+        # Build the proper file suffix based on flags. Campaign CSVs use plain
+        # ycsb_<wl>.csv names (no _perl/_zipfian/suffix decoration).
+        if campaign_mode:
+            file_suffix = ".csv"
+        else:
+            file_suffix = "_perl" if is_perlmutter else ""
+            if is_zipfian:
+                file_suffix += "_zipfian"
+            file_suffix += suffix
+            file_suffix += ".csv"
         
         csv_path = base_dir / an_folder / f"ycsb_{safe_wl}{file_suffix}"
 
@@ -188,14 +191,16 @@ def parse_args():
         "F-50-50-50_F-100-0-50"
     ]
     parser = argparse.ArgumentParser(description="Plot YCSB Bar Chart", add_help=False)
-    parser.add_argument('--AN', type=str, choices=['0', '1', 'both'], required=True)
+    parser.add_argument('--AN', type=str, choices=['on', 'off', 'both'], required=True)
+    parser.add_argument('--campaign', type=str, default=None,
+                        help="Campaign slug: read CSVs from Campaigns/ycsb/<slug>/AN_{on,off}/ "
+                             "and write figures into Campaigns/ycsb/<slug>/.")
     parser.add_argument('--workloads', type=str, nargs='+', default=default_workloads)
     parser.add_argument('--perlmutter', action='store_true')
-    parser.add_argument('--short', action='store_true')
     parser.add_argument('--zipfian', action='store_true', help="Read ycsb_<wl>_zipfian.csv files and prefix output with 'zipfian_'.")
-    parser.add_argument('--baseline', type=str, default='regular-regular',
-                        choices=['numa-numa', 'numa-regular', 'regular-numa', 'regular-regular'],
-                        help="Config to normalize against (default: regular-regular).")
+    parser.add_argument('--normalize', type=str, default='numa/regular',
+                        choices=['regular/regular', 'numa/regular', 'regular/numa'],
+                        help="Config to normalize throughput against (default: numa/regular).")
     parser.add_argument('--ROOT_DIR', type=str, default=os.path.expanduser("~/NUMATyping"))
     parser.add_argument('--stop', type=int, default=0, help="Stop sampling at this many seconds (0 = end of data)")
     parser.add_argument('--suffix', type=str, default='', help="Extra filename suffix before .csv, e.g. _uniform_0")
@@ -211,25 +216,33 @@ def main():
         show_help()
 
     root_dir = Path(args.ROOT_DIR).resolve()
-    target_threads = 128 if args.perlmutter else 80
-    
+    campaign_mode = args.campaign is not None
+
     # Rigidly define the base path using the standard NUMATyping hierarchy
-    if args.perlmutter:
+    if campaign_mode:
+        base_dir = root_dir / "Campaigns" / "ycsb" / args.campaign
+        target_threads = 80
+    elif args.perlmutter:
         base_dir = root_dir / "Graphs" / "Perlmutter"
+        target_threads = 128
     else:
         base_dir = root_dir / "Graphs"
+        target_threads = 80
 
     configs = ['numa-numa', 'numa-regular', 'regular-numa', 'regular-regular']
     custom_colors = ["#133bcb", "#f9d405", "#5ab057", "#5E5959"]
 
+    # Config to normalize against (user passes slash form; internal keys use hyphens).
+    baseline_config = args.normalize.replace('/', '-')
+
     # --- Fetch Data ---
     if args.AN == 'both':
-        data_on, x_labels = get_data("AN_on", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.short, args.zipfian, args.baseline, args.suffix)
-        data_off, _ = get_data("AN_off", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.short, args.zipfian, args.baseline, args.suffix)
+        data_on, x_labels = get_data("AN_on", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
+        data_off, _ = get_data("AN_off", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
         an_folder_name = "AN_both"
     else:
-        an_folder = "AN_on" if args.AN == '1' else "AN_off"
-        data, x_labels = get_data(an_folder, base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.short, args.zipfian, args.baseline, args.suffix)
+        an_folder = "AN_on" if args.AN == 'on' else "AN_off"
+        data, x_labels = get_data(an_folder, base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
         an_folder_name = an_folder
 
     # --- Plotting ---
@@ -352,13 +365,14 @@ def main():
 
     # --- Save Logic ---
     joined_labels = "_".join(x_labels[:-1]) # Don't include "Geomean" in the filename
-    
-    short_str = "_short" if args.short else ""
-    zipfian_prefix = "zipfian_" if args.zipfian else ""
-    base_suffix = "" if args.baseline == 'regular-regular' else f"_norm-{args.baseline}"
-    base_out_name = f"{zipfian_prefix}bar_plot_normalized_{joined_labels}_{target_threads}_{an_folder_name}{short_str}{base_suffix}"
-    
-    if args.AN == 'both':
+
+    # Naming convention: [Normalization]_normalized_[Workloads]
+    base_out_name = f"{baseline_config}_normalized_{joined_labels}"
+
+    if campaign_mode:
+        # Drop figures directly into the slug folder, next to manifest.md / git_diff.txt.
+        target_dirs = [base_dir]
+    elif args.AN == 'both':
         target_dirs = [base_dir / "AN_both" / "figs"]
     else:
         target_dirs = [base_dir / an_folder_name / "figs"]
