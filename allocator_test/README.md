@@ -1,5 +1,33 @@
 # allocator_test
 
+Three allocator test programs. `make UMF=1` builds all of them into `./bin/`:
+
+| Binary | What it is |
+|--------|-----------|
+| `allocator_test`     | single-threaded microbenchmark of four allocators (below) |
+| `verify_allocator`   | **regression test** — fast-path speed vs. thread count + NUMA placement correctness. Exits non-zero on failure. |
+| `throughput_compare` | multithreaded sweep: how many times faster the UMF pool is than `numa_alloc_onnode`, at 1/8/20 threads. |
+
+`verify_allocator` and `throughput_compare` were added alongside the UMF jemalloc
+pool changes (see `../allocator.md`); they need `UMF=1` and a 2-node machine.
+`allocator_test` is the original microbenchmark below.
+
+Quick start (from a 2-node machine, UMF already built):
+
+```sh
+make UMF=1 ROOT_DIR=$HOME/NUMATyping
+numactl --cpunodebind=0,1 --membind=0,1 ./bin/verify_allocator      # PASS/FAIL
+numactl --cpunodebind=0,1 --membind=0,1 ./bin/throughput_compare    # speedup table
+```
+
+`verify_allocator` is the one to run after any change to the jemalloc pool: it
+fails loudly if the free path regresses with thread count, or if a node-k
+allocation ever lands on the wrong node.
+
+---
+
+## allocator_test (the original microbenchmark)
+
 A small single-threaded microbenchmark that compares four allocators for many
 small, same-node allocations. Its purpose is to show why a pooled NUMA allocator
 (UMF + jemalloc) is preferable to raw `numa_alloc_onnode` when allocating large

@@ -46,6 +46,61 @@ A plain `numa<T,k>` only pins the *outer* object. The `numa-clang-tool` compiler
 
 ---
 
+## The allocator rework (2026-07, merged 2026-08)
+
+The jemalloc-backed UMF pool was reworked in commit `a45515bd` (merged from the
+`NUMATyping-umfAlloc` fork). Full rationale and measurements: [`allocator.md`](allocator.md).
+
+Two companion pages *(private Claude artifacts — visible to this account unless shared)*:
+
+- **[Why the allocator changed](https://claude.ai/code/artifact/0dd4446d-090d-43b5-b86b-225422e61cf9)** —
+  arenas, thread caches and the binding bug explained from scratch, with the reasoning behind each
+  individual change. Start here.
+- **[The staged diff](https://claude.ai/code/artifact/ec7ccf72-2ab6-4b6d-b3aa-728beda37801)** —
+  every changed file, red/green, grouped by role.
+
+**Before** (the fork's original customization of upstream UMF v0.9.0):
+
+- Per-thread tcaches instead of upstream's `MALLOCX_TCACHE_NONE` (upstream costs
+  ~42,000 ns/alloc at 20 threads -- every allocation takes an arena bin lock).
+- **But** all tcaches were created up front on the *main* thread, permanently binding
+  them to the main thread's arena: every `free()` from every worker flushed into one
+  arena's bins. Free cost exploded from 26 ns (1 thread) to **377 ns (20 threads)**.
+- 160 arenas per pool, rotated every allocation (~9 ns/alloc of cold-arena refills).
+- `MAX_JEMALLOC_THREADS` fixed at 200 with no bounds check -- and set to *256* in some
+  header copies, giving two different pool-struct sizes across the ABI.
+- `op_finalize` leaked 159 of the 160 arenas per pool.
+- The clang transformer's generated `operator new[]` allocated `sizeof(T)` regardless
+  of element count -- a heap overflow on any array-new of a numa-typed class.
+
+**After** (`unified-memory-framework/src/pool/pool_jemalloc.c`, `numaLib/`):
+
+- Tcaches are created **lazily, in the owning thread**, bound to that thread's fixed
+  arena (`umfJemallocBindThread`); a `pthread_key` destructor reclaims them on exit.
+- No arena rotation; one fixed arena per thread; allocation flags cached in TLS
+  (`umfFastJemallocMallocSlot` -- for `numa<T,k>` the slot is a compile-time constant).
+- Arena count defaults to the online CPU count; no thread ceiling; leaks fixed;
+  header copies synced (including `ycsb/include/`, missed by the fork itself);
+  transformer emits `sz` so array-new is correct.
+
+**Measured effect** (stormbreaker, 32 B objects; see `allocator_test/`):
+
+| metric | before | after |
+|---|---|---|
+| alloc+free pair, 20 threads | 408 ns | **43 ns** (flat 1->20 threads) |
+| BST numa/numa vs numa/regular | -11.3% | -2.5% |
+| node-1 allocations on wrong node | -- | **0 / 4096** (`verify_allocator`) |
+| vs `numa_alloc_onnode`, 20 threads | 1,061x | **7,142x** |
+
+After touching the pool, always rebuild `unified-memory-framework/build` **and** re-run
+`allocator_test/bin/verify_allocator` -- it guards the free-path flatness and the
+placement property the whole approach depends on. Note the static libs are build
+artifacts: a source merge alone does *not* update an existing `build/lib/*.a`
+(campaigns 01-03 unknowingly ran the old allocator this way; see the corrected
+provenance notes in `Campaigns/ycsb/campaign0*/manifest.md`).
+
+---
+
 ## Prerequisites
 
 - Clang/LLVM 20 or newer (the tool links `libclang`/`libLLVM`) and CMake

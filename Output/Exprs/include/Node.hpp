@@ -40,9 +40,9 @@ public:
     static void* operator new(std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(0 ,sizeof(Node),alignof(Node));
+            p= umf_alloc(0 ,sz,alignof(Node));
         #else
-            p = numa_alloc_onnode(sz* sizeof(Node), 0);
+            p = numa_alloc_onnode(sz, 0);
         #endif
         
         if (p == nullptr) {
@@ -55,9 +55,9 @@ public:
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(0 ,sizeof(Node),alignof(Node));
+            p= umf_alloc(0 ,sz,alignof(Node));
         #else
-            p = numa_alloc_onnode(sz* sizeof(Node), 0);
+            p = numa_alloc_onnode(sz, 0);
         #endif
         
         if (p == nullptr) {
@@ -121,9 +121,9 @@ public:
     static void* operator new(std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(1 ,sizeof(Node),alignof(Node));
+            p= umf_alloc(1 ,sz,alignof(Node));
         #else
-            p = numa_alloc_onnode(sz* sizeof(Node), 1);
+            p = numa_alloc_onnode(sz, 1);
         #endif
         
         if (p == nullptr) {
@@ -136,9 +136,9 @@ public:
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(1 ,sizeof(Node),alignof(Node));
+            p= umf_alloc(1 ,sz,alignof(Node));
         #else
-            p = numa_alloc_onnode(sz* sizeof(Node), 1);
+            p = numa_alloc_onnode(sz, 1);
         #endif
         
         if (p == nullptr) {

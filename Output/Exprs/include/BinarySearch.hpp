@@ -139,9 +139,9 @@ public:
     static void* operator new(std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(0 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+            p= umf_alloc(0 ,sz,alignof(BinarySearchTree));
         #else
-            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 0);
+            p = numa_alloc_onnode(sz, 0);
         #endif
         
         if (p == nullptr) {
@@ -154,9 +154,9 @@ public:
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(0 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+            p= umf_alloc(0 ,sz,alignof(BinarySearchTree));
         #else
-            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 0);
+            p = numa_alloc_onnode(sz, 0);
         #endif
         
         if (p == nullptr) {
@@ -372,9 +372,9 @@ public:
     static void* operator new(std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(1 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+            p= umf_alloc(1 ,sz,alignof(BinarySearchTree));
         #else
-            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 1);
+            p = numa_alloc_onnode(sz, 1);
         #endif
         
         if (p == nullptr) {
@@ -387,9 +387,9 @@ public:
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc(1 ,sizeof(BinarySearchTree),alignof(BinarySearchTree));
+            p= umf_alloc(1 ,sz,alignof(BinarySearchTree));
         #else
-            p = numa_alloc_onnode(sz* sizeof(BinarySearchTree), 1);
+            p = numa_alloc_onnode(sz, 1);
         #endif
         
         if (p == nullptr) {

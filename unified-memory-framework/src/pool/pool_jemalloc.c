@@ -24,6 +24,8 @@
 
 #include <threads.h>
 #include <stdatomic.h>
+#include <pthread.h>
+#include <unistd.h>
 
 // The Windows version of jemalloc uses API with je_ prefix,
 // while the Linux one does not.
@@ -36,10 +38,127 @@
 #endif
 
 __thread unsigned thread_id=UINT_MAX;
-__thread unsigned arena_spin=0;
 atomic_int thread_count=0;
 
+// Per-thread flag cache declared in pool_jemalloc.h.
+__thread int umf_je_alloc_flags[UMF_JE_MAX_POOLS];
+__thread int umf_je_free_flags[UMF_JE_MAX_POOLS];
+__thread unsigned umf_je_bound_mask = 0;
+
+// Registry so the fast path can resolve a slot without touching a pool handle.
+static jemalloc_memory_pool_t *pool_by_slot[UMF_JE_MAX_POOLS];
+static atomic_uint next_pool_slot = 0;
+
 #define MALLOCX_ARENA_MAX (MALLCTL_ARENAS_ALL - 1)
+
+// Explicit tcaches are not reclaimed by jemalloc when a thread exits, so a
+// process that churns threads would leak one tcache per (thread, pool). A TSD
+// destructor flushes and destroys them instead.
+static pthread_key_t tcache_key;
+static pthread_once_t tcache_key_once = PTHREAD_ONCE_INIT;
+
+// jemalloc offers no public accessor to read a tcache index back out of a flags
+// word, so keep the raw indices alongside.
+static __thread unsigned umf_je_tcache[UMF_JE_MAX_POOLS];
+
+static void destroy_thread_tcaches(void *unused) {
+    (void)unused;
+    for (unsigned slot = 0; slot < UMF_JE_MAX_POOLS; ++slot) {
+        if (!((umf_je_bound_mask >> slot) & 1u)) {
+            continue;
+        }
+        unsigned tcache = umf_je_tcache[slot];
+        je_mallctl("tcache.destroy", NULL, 0, &tcache, sizeof(unsigned));
+    }
+    umf_je_bound_mask = 0;
+}
+
+static void make_tcache_key(void) {
+    pthread_key_create(&tcache_key, destroy_thread_tcaches);
+}
+
+/*
+ * Give the calling thread its own arena within the pool's range, and a tcache
+ * bound to that same arena.
+ *
+ * The binding is the whole point. jemalloc associates a tcache with whatever
+ * arena the *creating* thread is using at tcache.create time, and never rebinds
+ * it. Creating every tcache up front on one thread (as this pool used to) makes
+ * all worker threads flush into that one thread's arena bins, so free() takes a
+ * contended lock and collapses as thread count rises.
+ */
+void umfJemallocBindThread(unsigned slot) {
+    assert(slot < UMF_JE_MAX_POOLS);
+    jemalloc_memory_pool_t *pool = pool_by_slot[slot];
+    assert(pool && "umfJemallocBindThread() called for an unregistered slot");
+
+    pthread_once(&tcache_key_once, make_tcache_key);
+
+    unsigned arena = pool->arena_index + (tid() % pool->num_arenas);
+
+    // -ljemalloc interposes the global malloc, so thread.arena also governs this
+    // thread's ordinary allocations. Save it and put it back once the tcache has
+    // taken its snapshot, otherwise plain malloc() silently starts returning
+    // node-bound memory.
+    unsigned saved_arena = 0;
+    size_t usz = sizeof(unsigned);
+    int have_saved = (je_mallctl("thread.arena", &saved_arena, &usz, NULL, 0) == 0);
+
+    unsigned tcache = 0;
+    size_t tsz = sizeof(unsigned);
+    if (je_mallctl("thread.arena", NULL, NULL, &arena, sizeof(unsigned))) {
+        LOG_ERR("could not set thread.arena");
+        assert(false && "could not set thread.arena");
+        exit(-1);
+    }
+    if (je_mallctl("tcache.create", &tcache, &tsz, NULL, 0)) {
+        LOG_ERR("could not create tcache");
+        assert(false && "could not create tcache");
+        exit(-1);
+    }
+    if (have_saved) {
+        je_mallctl("thread.arena", NULL, NULL, &saved_arena, sizeof(unsigned));
+    }
+
+    umf_je_tcache[slot] = tcache;
+    umf_je_alloc_flags[slot] = MALLOCX_ARENA(arena) | MALLOCX_TCACHE(tcache);
+    umf_je_free_flags[slot] = MALLOCX_TCACHE(tcache);
+    umf_je_bound_mask |= 1u << slot;
+
+    pthread_setspecific(tcache_key, (void *)1);
+}
+
+// One arena per online CPU by default, so each pinned thread gets its own.
+// UMF_JE_ARENAS_PER_POOL overrides it.
+static unsigned default_num_arenas(void) {
+    const char *env = getenv("UMF_JE_ARENAS_PER_POOL");
+    if (env) {
+        long n = strtol(env, NULL, 10);
+        if (n > 0 && n < MALLOCX_ARENA_MAX) {
+            return (unsigned)n;
+        }
+        LOG_ERR("ignoring out-of-range UMF_JE_ARENAS_PER_POOL=%s", env);
+    }
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    return (ncpu > 0) ? (unsigned)ncpu : 16u;
+}
+
+// Flags for (calling thread, pool), binding the thread first if needed.
+static inline int pool_alloc_flags(jemalloc_memory_pool_t *je_pool) {
+    unsigned slot = je_pool->pool_slot;
+    if (!((umf_je_bound_mask >> slot) & 1u)) {
+        umfJemallocBindThread(slot);
+    }
+    return umf_je_alloc_flags[slot];
+}
+
+static inline int pool_free_flags(jemalloc_memory_pool_t *je_pool) {
+    unsigned slot = je_pool->pool_slot;
+    if (!((umf_je_bound_mask >> slot) & 1u)) {
+        umfJemallocBindThread(slot);
+    }
+    return umf_je_free_flags[slot];
+}
 
 
 
@@ -305,18 +424,10 @@ static extent_hooks_t arena_extent_hooks = {
 static void *op_malloc(void *pool, size_t size) {
     assert(pool);
     jemalloc_memory_pool_t *je_pool = (jemalloc_memory_pool_t *)pool;
-    // MALLOCX_TCACHE_NONE is set, because jemalloc can mix objects from different arenas inside
-    // the tcache, so we wouldn't be able to guarantee isolation of different providers.
-	
-	/*
-	cycle through arenas associated with our pool
-	use tcache associated with this ppol
-	*/
-	arena_spin++;
-	if(arena_spin>=je_pool->num_arenas){arena_spin=0;}
-	int arena = je_pool->arena_index + arena_spin;
-    int flags = MALLOCX_ARENA(arena) | MALLOCX_TCACHE(je_pool->tcaches[tid()]);
-    void *ptr = je_mallocx(size, flags);
+    // A dedicated per-thread tcache (rather than upstream's MALLOCX_TCACHE_NONE)
+    // keeps pools isolated -- jemalloc's automatic tcache would mix objects from
+    // different providers, and hand node-0 memory back for a node-1 request.
+    void *ptr = je_mallocx(size, pool_alloc_flags(je_pool));
     if (ptr == NULL) {
         TLS_last_allocation_error = UMF_RESULT_ERROR_OUT_OF_HOST_MEMORY;
         return NULL;
@@ -335,7 +446,7 @@ static umf_result_t op_free(void *pool, void *ptr) {
 
     if (ptr != NULL) {
         VALGRIND_DO_MEMPOOL_FREE(pool, ptr);
-        je_dallocx(ptr, MALLOCX_TCACHE(je_pool->tcaches[tid()]));
+        je_dallocx(ptr, pool_free_flags(je_pool));
     }
 
     return UMF_RESULT_SUCCESS;
@@ -361,20 +472,15 @@ static void *op_realloc(void *pool, void *ptr, size_t size) {
     jemalloc_memory_pool_t *je_pool = (jemalloc_memory_pool_t *)pool;
 
     if (size == 0 && ptr != NULL) {
-        je_dallocx(ptr, MALLOCX_TCACHE(je_pool->tcaches[tid()]));
+        je_dallocx(ptr, pool_free_flags(je_pool));
         TLS_last_allocation_error = UMF_RESULT_SUCCESS;
         VALGRIND_DO_MEMPOOL_FREE(pool, ptr);
         return NULL;
     } else if (ptr == NULL) {
         return op_malloc(pool, size);
     }
-    // MALLOCX_TCACHE_NONE is set, because jemalloc can mix objects from different arenas inside
-    // the tcache, so we wouldn't be able to guarantee isolation of different providers.
-	arena_spin++;
-	if(arena_spin>=je_pool->num_arenas){arena_spin=0;}
-	int arena = je_pool->arena_index + arena_spin;
-    int flags = MALLOCX_ARENA(arena) | MALLOCX_TCACHE(je_pool->tcaches[tid()]);
-    void *new_ptr = je_rallocx(ptr, size, flags);
+
+    void *new_ptr = je_rallocx(ptr, size, pool_alloc_flags(je_pool));
     if (new_ptr == NULL) {
         TLS_last_allocation_error = UMF_RESULT_ERROR_OUT_OF_HOST_MEMORY;
         return NULL;
@@ -394,12 +500,7 @@ static void *op_realloc(void *pool, void *ptr, size_t size) {
 static void *op_aligned_alloc(void *pool, size_t size, size_t alignment) {
     assert(pool);
     jemalloc_memory_pool_t *je_pool = (jemalloc_memory_pool_t *)pool;
-	arena_spin++;
-	if(arena_spin>=je_pool->num_arenas){arena_spin=0;}
-	int arena = je_pool->arena_index + arena_spin;
-    int flags = MALLOCX_ALIGN(alignment) | MALLOCX_ARENA(arena) | MALLOCX_TCACHE(je_pool->tcaches[tid()]);
-    // MALLOCX_TCACHE_NONE is set, because jemalloc can mix objects from different arenas inside
-    // the tcache, so we wouldn't be able to guarantee isolation of different providers.
+    int flags = MALLOCX_ALIGN(alignment) | pool_alloc_flags(je_pool);
     void *ptr = je_mallocx(size, flags);
     if (ptr == NULL) {
         TLS_last_allocation_error = UMF_RESULT_ERROR_OUT_OF_HOST_MEMORY;
@@ -429,13 +530,28 @@ static umf_result_t op_initialize(umf_memory_provider_handle_t provider,
     }
 
     pool->provider = provider;
-	pool->num_arenas = 160;
+
+    // One arena per thread avoids bin-lock contention without the cost of the
+    // old scheme, which rotated the arena on every single allocation and so
+    // scattered every thread's tcache refills across all of them.
+    unsigned num_arenas = (je_params && je_params->num_arenas)
+                              ? je_params->num_arenas
+                              : default_num_arenas();
+    pool->num_arenas = num_arenas;
 
     if (je_params) {
         pool->disable_provider_free = je_params->disable_provider_free;
     } else {
         pool->disable_provider_free = false;
     }
+
+    unsigned slot = atomic_fetch_add_explicit(&next_pool_slot, 1,
+                                              memory_order_relaxed);
+    if (slot >= UMF_JE_MAX_POOLS) {
+        LOG_ERR("too many jemalloc pools (raise UMF_JE_MAX_POOLS)");
+        goto err_free_pool;
+    }
+    pool->pool_slot = slot;
 
 	unsigned new_arena_index;
 	for(unsigned i = 0; i<pool->num_arenas; i++){
@@ -460,22 +576,19 @@ static umf_result_t op_initialize(umf_memory_provider_handle_t provider,
 		if(i == 0){
 			pool->arena_index = new_arena_index; // set the base index
 		}
+		// The fast path derives a thread's arena as arena_index + offset, which
+		// requires the range to be contiguous.
+		assert(new_arena_index == pool->arena_index + i &&
+		       "jemalloc handed out a non-contiguous arena range");
 		pool_by_arena_index[new_arena_index] = pool;
-
-		*out_pool = (umf_memory_pool_handle_t)pool;
-
-		VALGRIND_DO_CREATE_MEMPOOL(pool, 0, 0);
 	}
-	
-	assert(MAX_JEMALLOC_THREADS<257);
-	for(unsigned i = 0; i< MAX_JEMALLOC_THREADS;i++){
-		unsigned tcache;
-		size_t sz = sizeof(unsigned);
-		je_mallctl("tcache.create",&tcache,&sz,NULL,0);
-		pool->tcaches[i] = tcache;
-		// printf("Creating tcache: %d\n",tcache);
-	}
-	
+
+	// tcaches are created lazily, by the thread that will use them -- see
+	// umfJemallocBindThread().
+	pool_by_slot[slot] = pool;
+	*out_pool = (umf_memory_pool_handle_t)pool;
+	VALGRIND_DO_CREATE_MEMPOOL(pool, 0, 0);
+
     return UMF_RESULT_SUCCESS;
 
 err_free_pool:
@@ -490,16 +603,15 @@ static void op_finalize(void *pool) {
     jemalloc_memory_pool_t *je_pool = (jemalloc_memory_pool_t *)pool;
     char cmd[64];
 	for(unsigned i = 0; i<je_pool->num_arenas; i++){
-		snprintf(cmd, sizeof(cmd), "arena.%u.destroy", je_pool->arena_index);
+		unsigned arena = je_pool->arena_index + i;
+		snprintf(cmd, sizeof(cmd), "arena.%u.destroy", arena);
 		je_mallctl(cmd, NULL, 0, NULL, 0);
-		pool_by_arena_index[je_pool->arena_index] = NULL;		
+		pool_by_arena_index[arena] = NULL;
 	}
-	for(unsigned i = 0; i< MAX_JEMALLOC_THREADS;i++){
-		unsigned tcache = je_pool->tcaches[i];
-		size_t sz = sizeof(unsigned);
-		je_mallctl("tcache.destroy",NULL,0,&tcache,sz);
-	}
-	
+	// Per-thread tcaches belong to the threads that created them and are
+	// reclaimed by destroy_thread_tcaches() when those threads exit.
+	pool_by_slot[je_pool->pool_slot] = NULL;
+
     umf_ba_global_free(je_pool);
 
     VALGRIND_DO_DESTROY_MEMPOOL(pool);

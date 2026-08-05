@@ -45,7 +45,7 @@ class numa<Node, 0>: public Node {
 	public: 
     static void* operator new(std::size_t sz){
         std::cout<<"new operator called"<<std::endl;
-		 void* p = numa_alloc_onnode(sz * sizeof(Node), 0);
+		 void* p = numa_alloc_onnode(sz, 0);
         if (p == nullptr) {
             throw std::bad_alloc();
         }
@@ -54,7 +54,7 @@ class numa<Node, 0>: public Node {
 
     static void* operator new[](std::size_t sz){
 		std::cout<<"new operator called"<<std::endl;
-		 void* p = numa_alloc_onnode(sz * sizeof(Node), 0);
+		 void* p = numa_alloc_onnode(sz, 0);
         if (p == nullptr) {
             throw std::bad_alloc();
         }

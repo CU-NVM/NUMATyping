@@ -11,9 +11,12 @@ ROOT_DIR   ?= $(HOME)/NUMATyping
 INC_DIRS := -Iinclude/  -I$(ROOT_DIR)/numaLib
 UMF_INC_DIRS :=
 
-# Executable and object files
-EXE  := ./bin/allocator_test
-OBJS := src/main.o
+# Executables.
+#   allocator_test     - malloc|jemalloc|umf|numa micro-test (builds without UMF too)
+#   verify_allocator   - regression test: fast-path speed + NUMA placement (UMF only)
+#   throughput_compare - UMF vs numa_alloc_onnode speedup sweep      (UMF only)
+EXE      := ./bin/allocator_test
+UMF_EXES := ./bin/verify_allocator ./bin/throughput_compare
 
 # Unified Memory Framework (optional)
 # Usage: make UMF=1 JEMALLOC_ROOT=/path/to/jemalloc
@@ -45,19 +48,31 @@ ifdef DEBUG
     CXXFLAGS += -DDEBUG
 endif
 
-# Default target
+# Default target: always build allocator_test; add the UMF-only tests under UMF=1.
 all: $(EXE)
+ifeq ($(UMF), 1)
+all: $(UMF_EXES)
+endif
 
-# Linking
-$(EXE): $(OBJS)
+# allocator_test links the shared main.o
+./bin/allocator_test: src/main.o
 	@mkdir -p bin
-	$(CC) $(OBJS) $(LINK_FLAGS) -o $(EXE)
+	$(CC) $< $(LINK_FLAGS) -o $@
 
-# Generic rule for compiling .cpp to .o
+# The UMF-only tests are each a single self-contained .cpp.
+./bin/verify_allocator: src/verify_allocator.cpp src/alloc_test_common.hpp
+	@mkdir -p bin
+	$(CC) $(CXXFLAGS) $(INC_DIRS) $(UMF_INC_DIRS) src/verify_allocator.cpp $(LINK_FLAGS) -o $@
+
+./bin/throughput_compare: src/throughput_compare.cpp src/alloc_test_common.hpp
+	@mkdir -p bin
+	$(CC) $(CXXFLAGS) $(INC_DIRS) $(UMF_INC_DIRS) src/throughput_compare.cpp $(LINK_FLAGS) -o $@
+
+# Generic rule for compiling .cpp to .o (used by main.cpp)
 %.o: %.cpp
 	$(CC) -c $(CXXFLAGS) $(INC_DIRS) $(UMF_INC_DIRS) $< -o $@
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJS) $(EXE)
+	rm -f src/*.o $(EXE) $(UMF_EXES)
 

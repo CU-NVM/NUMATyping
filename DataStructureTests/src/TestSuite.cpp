@@ -72,11 +72,20 @@ int checkNUMANode(void* ptr) {
 
 
 
+// Number of sampling buckets for a run. Integer division alone truncates to 0
+// whenever duration < interval (e.g. -D 5 with the default -i 20), which left
+// the ops vectors empty and every localOps[]/globalOps[] access out of bounds.
+int numIntervals(int duration, int interval){
+	if(interval <= 0){ return 1; }
+	int n = (duration + interval - 1) / interval;   // round up
+	return n > 0 ? n : 1;
+}
+
 void global_init(int num_threads, int duration, int interval){
 	pthread_barrier_init(&bar, NULL, num_threads);
 	pthread_barrier_init(&init_bar, NULL, 2);
-	globalOps0.resize(duration/interval);
-	globalOps1.resize(duration/interval);
+	globalOps0.resize(numIntervals(duration, interval));
+	globalOps1.resize(numIntervals(duration, interval));
 	ops0 = 0;
 	ops1 = 0;
 	printLK = new std::mutex();
@@ -175,7 +184,7 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 
 	int64_t ops;
 	thread_local vector<int64_t> localOps;
-	localOps.resize(duration/interval);
+	localOps.assign(numIntervals(duration, interval), 0);
 	int x = xDist(gen);
 	auto startTimer = std::chrono::steady_clock::now();
 	auto endTimer = startTimer + std::chrono::seconds(duration);
@@ -323,8 +332,12 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 		ops++;
 		if(ops % 1024 == 0){
 			if(std::chrono::steady_clock::now() >= nextLogTime){
-				localOps[intervalIdx] = ops;
-				intervalIdx++;
+				// Clamp: a slow final interval can fire more often than there
+				// are buckets.
+				if(intervalIdx < (int)localOps.size() - 1){
+					localOps[intervalIdx] = ops;
+					intervalIdx++;
+				}
 				nextLogTime += std::chrono::seconds(interval);
 			}
 			if(std::chrono::steady_clock::now() >= endTimer){

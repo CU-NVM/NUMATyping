@@ -129,7 +129,7 @@ class numa<Stack, 0>:public Stack{
 public: 
     static void* operator new(std::size_t sz){
         std::cout<<"new operator called"<<std::endl;
-		 void* p = numa_alloc_onnode(sz * sizeof(Stack), 0);
+		 void* p = numa_alloc_onnode(sz, 0);
         if (p == nullptr) {
             throw std::bad_alloc();
         }
@@ -138,7 +138,7 @@ public:
 
     static void* operator new[](std::size_t sz){
 		std::cout<<"new operator called"<<std::endl;
-		 void* p = numa_alloc_onnode(sz * sizeof(Stack), 0);
+		 void* p = numa_alloc_onnode(sz, 0);
         if (p == nullptr) {
             throw std::bad_alloc();
         }

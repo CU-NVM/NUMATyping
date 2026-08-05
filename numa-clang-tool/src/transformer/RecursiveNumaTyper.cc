@@ -80,11 +80,11 @@ std::string utils::getNumaAllocatorCode(std::string classDecl, std::string nodeI
     static void* operator new(std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc()"+ nodeID + R"( ,sizeof()"+classDecl +R"(),alignof()"+ classDecl + R"());
+            p= umf_alloc()"+ nodeID + R"( ,sz,alignof()"+ classDecl + R"());
         #else
             p = numa_alloc_onnode(sz, )"+ nodeID +R"();
         #endif
-        
+
         if (p == nullptr) {
             std::cout<<"allocation failed\n";
             throw std::bad_alloc();
@@ -92,10 +92,13 @@ std::string utils::getNumaAllocatorCode(std::string classDecl, std::string nodeI
         return p;
     }
 
+    // sz is the total byte count the compiler asks for, so it already covers the
+    // element count (and any array cookie). Using sizeof(T) here allocated room
+    // for exactly one element regardless of how many were requested.
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
-            p= umf_alloc()"+ nodeID + R"( ,sizeof()"+classDecl +R"(),alignof()"+ classDecl + R"());
+            p= umf_alloc()"+ nodeID + R"( ,sz,alignof()"+ classDecl + R"());
         #else
             p = numa_alloc_onnode(sz, )"+ nodeID +R"();
         #endif
