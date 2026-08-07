@@ -209,9 +209,9 @@ These scripts wrap the full lifecycle: optional numafy, compile, configuration s
 |---|---|
 | `runExperiments.py` | the BST data-structure suite (`--suite DataStructureTests` / `DataStructureTests_four`) |
 | `runYCSB.py` | the YCSB suite |
-| `runHistogram.py` | the Histogram suite |
-| `runArray.py` | the Array suite |
 | `perfBST.py`, `perfYCSB.py` | `perf`-based profiling runs |
+| `campaign.py`, `run.py` | git-gated archival sweeps / quick scratch runs (see `Campaigns/`) |
+| `an_comparison.py` | AutoNUMA comparison tables and figures for a campaign |
 
 **Example — BST, numa/numa vs numa/regular, AutoNUMA off, four logical nodes:**
 ```shell

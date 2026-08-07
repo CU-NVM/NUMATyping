@@ -244,7 +244,7 @@ if __name__ == "__main__":
 
             if args.graph:
                 # Call the specific plot_benchmark script
-                plot_script = os.path.join(ROOT_DIR, "scripts", "plot_bst.py")
+                plot_script = os.path.join(ROOT_DIR, "scripts", "line_plot_bst.py")
                 subprocess.run(f'python3 {plot_script} --AN {args.AN} --ds_name "{ds}" --numDS {args.numDS} --numKeys {args.numKeys}', shell=True)
 
             print(f"COMPLETE. Primary Results for {ds} saved to: {out_specific_path}")

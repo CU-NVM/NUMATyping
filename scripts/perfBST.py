@@ -2,240 +2,305 @@
 import subprocess
 import argparse
 import os
-from pathlib import Path
-import csv
 import sys
-import threading
 import time
+from pathlib import Path
 
-# ----------------------------------------------------
-# Clean path setup
-# ----------------------------------------------------
+# ============================================================================
+# Help Function
+# ============================================================================
 
-def ensure_dir(path: Path) -> Path:
-    """Ensure 'path' exists; return absolute path."""
-    path.mkdir(parents=True, exist_ok=True)
-    return path.resolve()
+def show_help():
+    help_text = """
+Data Structure Experiment Runner
+--------------------------------
+Automates the lifecycle of NUMA-aware Data Structure tests.
 
-# ----------------------------------------------------
-# Sudo Keep-Alive
-# ----------------------------------------------------
+USAGE:
+    python3 runExperiments.py --DS [name] [OPTIONS]
 
-def keep_sudo_alive():
+CORE OPTIONS:
+    --DS NAME [NAME..]      Specify one or more data structure names (Required).
+    --ROOT_DIR PATH         Path to NUMATyping root (Default: ~/NUMATyping).
+    --numafy                Trigger the 'numafy.py' transformation pass. 
+    --UMF                   Enable Unified Memory Framework support.
+    --AN [0|1]              Set AutoNUMA. 1 adds '--balancing' to numactl (Default: 1).
+    -d, --output PATH       Output directory (Default: ROOT_DIR/Result).
+    --graph                 Generate plots after the run finishes.
+    --perlmutter            Use Perlmutter config (128 threads, node 0/7 binding, '_perl' suffix).
+    --jemalloc-root PATH    Manual path to jemalloc (Default: auto-detect via spack).
+    --numDS INT             Number of data structure elements (Default: 1000000)
+    --numKeys INT           Keyspace size (Default: 80)
+    --perf                  Run with 'perf stat' to track local vs remote NUMA accesses.
+
+WORKFLOW EXAMPLE:
+    python3 runExperiments.py --DS HashTrie Skiplist --numafy --UMF --perlmutter --AN 1 --perf
+"""
+    print(help_text)
+    sys.exit(0)
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def get_spack_path(package):
+    cmd = "source /etc/profile.d/modules.sh && module load spack && spack location -i " + package
+    try:
+        return subprocess.check_output(cmd, shell=True, executable='/bin/bash', 
+                                       universal_newlines=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        return None
+
+def ensure_dir(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return os.path.abspath(path)
+
+def clean_perf_csv(raw_csv_path: Path, clean_csv_path: Path):
     """
-    Runs `sudo -v` periodically in the background to keep the sudo ticket 
-    alive, preventing password prompts during long experiments.
+    Takes the raw, multi-line perf stat output and converts it into 
+    a clean 3-column CSV: time, local_ops, remote_ops.
     """
-    while True:
-        time.sleep(60)  # Refresh the token every 60 seconds
-        subprocess.run(["sudo", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    data = {}
+    try:
+        with open(raw_csv_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if line.startswith('#') or not line:
+                    continue
+                
+                parts = line.split(',')
+                if len(parts) >= 4:
+                    try:
+                        time_val = float(parts[0].strip())
+                        count_val_str = parts[1].strip()
+                        event_name = parts[3].strip()
 
-# ----------------------------------------------------
-# Build
-# ----------------------------------------------------
+                        # Handle perf scenarios where events aren't counted
+                        if count_val_str == '<not counted>' or count_val_str == '<not supported>':
+                            count_val = 0
+                        else:
+                            count_val = int(count_val_str)
 
-def compile_experiment(UMF: bool, experiment_folder: Path) -> None:
-    if not experiment_folder.exists():
-        raise RuntimeError(f"Experiment folder does not exist: {experiment_folder}")
+                        if time_val not in data:
+                            data[time_val] = {'local': 0, 'remote': 0}
+
+                        if 'mem_io_local' in event_name:
+                            data[time_val]['local'] = count_val
+                        elif 'mem_io_remote' in event_name:
+                            data[time_val]['remote'] = count_val
+
+                    except ValueError:
+                        continue
+
+        # Write the cleanly formatted CSV
+        with open(clean_csv_path, 'w') as f:
+            f.write("time,local_ops,remote_ops\n")
+            for t in sorted(data.keys()):
+                f.write(f"{t},{data[t]['local']},{data[t]['remote']}\n")
+                
+        # Clean up the raw perf file so we don't clutter the directory
+        if clean_csv_path.exists():
+            os.remove(raw_csv_path)
+
+    except Exception as e:
+        print(f"[Warning] Failed to process perf output: {e}")
+
+# ============================================================================
+# Execution Pipeline
+# ============================================================================
+
+def compile_experiment(UMF: bool, do_numafy: bool, root_dir: str, jemalloc_root: str, experiment_folder: str) -> None:
+    max_node = os.environ.get("MAX_NODE_ID", "0")
+    
+    if do_numafy:
+        numafy_script = os.path.join(root_dir, "numafy.py")
+        numafy_cmd = ["python3", numafy_script, f"--ROOT_DIR={root_dir}", "DataStructureTests", f"--umf={1 if UMF else 0}"]
+        if jemalloc_root:
+            numafy_cmd.append(f"--jemalloc-root={jemalloc_root}")
+        
+        print(f"\n--- Running Transformation (MAX_NODE_ID={max_node}) ---")
+        subprocess.run(numafy_cmd, check=True)
 
     print(f"\n--- Compiling in {experiment_folder} ---")
+    subprocess.run(f"make -C {experiment_folder} clean", shell=True, check=False)
     
-    subprocess.run(["make", "clean"], cwd=experiment_folder, check=False)
+    make_vars = f"ROOT_DIR={root_dir} "
+    if jemalloc_root: make_vars += f" JEMALLOC_ROOT={jemalloc_root}"
+    if UMF: make_vars += " UMF=1"
+    
+    subprocess.run(f"make -C {experiment_folder} {make_vars}", shell=True, check=True)
 
-    build_cmd = ["make"]
-    if UMF:
-        build_cmd.append("UMF=1")
-
-    subprocess.run(build_cmd, cwd=experiment_folder, check=True)
-
-# ----------------------------------------------------
-# CSV Conversion
-# ----------------------------------------------------
-
-def convert_perf_to_csv(input_file):
-    """Converts a raw perf stat output file into a clean CSV file."""
-    input_path = Path(input_file)
-    output_csv = input_path.with_suffix(".csv")
-
-    with open(input_path, "r") as f:
-        lines = f.readlines()
-
-    time_to_values = {}
-
-    for line in lines:
-        line = line.strip()
-        if line.startswith("#") or not line:
-            continue
-            
-        parts = line.split()
-        if len(parts) >= 3:
-            try:
-                time_val = float(parts[0])
-                count_str = parts[1].replace(",", "")
-                
-                # Handle <not counted> or <not supported>
-                if count_str == "<not":
-                    count = 0
-                    event_name = parts[3].lower()
-                else:
-                    count = int(count_str)
-                    event_name = parts[2].lower()
-                
-                if time_val not in time_to_values:
-                    time_to_values[time_val] = {"remote": 0, "local": 0}
-                    
-                if "remote" in event_name:
-                    time_to_values[time_val]["remote"] = count
-                elif "local" in event_name:
-                    time_to_values[time_val]["local"] = count
-            except ValueError:
-                continue
-
-    with open(output_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Time", "Remote Accesses", "Local Accesses"])
-        for t, vals in sorted(time_to_values.items()):
-            writer.writerow([t, vals["remote"], vals["local"]])
-
-    print(f"Converted {input_file} → {output_csv}")
-    return output_csv
-
-# ----------------------------------------------------
-# Perf run
-# ----------------------------------------------------
-
-def perf_ds_experiment(output_dir: Path, data_structures: list, experiment_folder: Path, an_setting: int, numDS: str, numKeys: str, is_perlmutter: bool, stop_time: int) -> None:
-    output_dir = ensure_dir(output_dir)
-
-    configs = [
-        # ("numa", "numa"),
-        # ("numa", "regular"),
-        # ("regular", "numa"),
-        ("regular", "regular")
-    ]
-
-    # Dynamically build numactl flags and threads based on system
+def run_experiment(output_csv: Path, graph_dir: Path, experiment_folder: str, DS_name: str, numDS: str, numKeys: str, an_setting: int, is_perlmutter: bool, run_perf: bool) -> None:
     if is_perlmutter:
         numactl_base = "--cpunodebind=0,7 --membind=0,7"
         t_val = "128"
-        event_remote = "ls_any_fills_from_sys.mem_io_remote"
-        event_local = "ls_any_fills_from_sys.mem_io_local"
     else:
         numactl_base = "--cpunodebind=0,1 --membind=0,1"
-        t_val = "80"
-        event_remote = "ocr.demand_data_rd.remote_dram"
-        event_local = "ocr.demand_data_rd.local_dram"
+        t_val = "40:80"
 
     if an_setting == 1:
         numactl_flags = f"--balancing {numactl_base}"
     else:
         numactl_flags = numactl_base
 
-    for ds in data_structures:
-        print(f"\n=======================================================")
-        print(f"Starting Perf Collection for Data Structure: {ds}")
-        print(f"=======================================================")
+    print(f"--- Configuring NUMA Binding: {numactl_flags} ---")
 
-        for th_config, ds_config in configs:
-            print(f"\n--- Testing Config: TH={th_config}, DS={ds_config} ---")
+    combinations = [
+        ("numa", "numa"),
+        ("numa", "regular"),
+        ("regular", "numa"),
+        ("regular", "regular")
+    ]
 
-            # Wrapping the execution inside Python meta.py to maintain the DataStructure environment variables and arguments
-            ds_cmd = (
-                f"cd {experiment_folder} && python3 meta.py "
-                f"numactl {numactl_flags} "
-                f"./bin/datastructures "
-                f"--meta n:{numDS} "
-                f"--meta t:{t_val} "
-                f"--meta D:{stop_time} "
-                f"--meta DS_name:{ds} "
-                f"--meta th_config:{th_config} "
-                f"--meta DS_config:{ds_config} "
-                f"--meta k:{numKeys} "
-                f"--meta i:10"
-            )
+    for th, ds in combinations:
+        cmd_list = [
+            "python3", "meta.py",
+            "numactl"
+        ] + numactl_flags.split() + [
+            "./bin/datastructures",
+            "--meta", f"n:{numDS}",
+            "--meta", f"t:{t_val}",
+            "--meta", "D:7200",
+            "--meta", f"DS_name:{DS_name}",
+            "--meta", f"th_config:{th}",
+            "--meta", f"DS_config:{ds}",
+            "--meta", f"k:{numKeys}",
+            "--meta", "i:10"
+        ]
 
+        if run_perf:
             file_suffix = "_perl" if is_perlmutter else ""
-            perf_output = output_dir / f"perf_{ds}_{numDS}_{numKeys}_{th_config}_{ds_config}{file_suffix}.data"
-
-            perf_cmd = (
-                f"sudo perf stat "
-                f"-e {event_remote} "
-                f"-e {event_local} "
-                f"-I 2000 "
-                f"-o {perf_output} "
-                f"-- bash -c \"{ds_cmd}\""
-            )
-
-            print(f"Executing: {perf_cmd}")
-            subprocess.run(perf_cmd, shell=True, check=True)
+            raw_perf_filename = f"raw_perf_{DS_name}_{numDS}_{numKeys}_{th}_{ds}{file_suffix}.csv"
+            clean_perf_filename = f"perf_{DS_name}_{numDS}_{numKeys}_{th}_{ds}{file_suffix}.csv"
             
-            # Convert the resulting .data file to the final .csv
-            if perf_output.exists():
-                convert_perf_to_csv(str(perf_output))
-                # Optional: Uncomment the line below to delete the raw .data file after conversion
-                # os.remove(perf_output)
-                
-            print("-> Run complete. Sleeping 10s to clear memory caches...")
-            time.sleep(10)
+            perf_path = graph_dir / "perf"
+            perf_path.mkdir(parents=True, exist_ok=True)
+            
+            raw_perf_out = perf_path / raw_perf_filename
+            clean_perf_out = perf_path / clean_perf_filename
+            
+            perf_prefix = [
+                "perf", "stat",
+                "-e", "ls_any_fills_from_sys.mem_io_local,ls_any_fills_from_sys.mem_io_remote",
+                "-I", "2000",
+                "-x,",
+                "-o", str(raw_perf_out)
+            ]
+            
+            cmd_list = perf_prefix + cmd_list
+            print(f"-> Perf Profiling Enabled. Processing output to: {clean_perf_out}")
 
-# ----------------------------------------------------
-# main
-# ----------------------------------------------------
+        print(f"\n-> Running Combination: Thread={th} | DataStructure={ds}")
+        print(f"Executing: {' '.join(cmd_list)}")
+
+        with open(output_csv, "a") as f:
+            subprocess.run(cmd_list, cwd=experiment_folder, stdout=f, text=True, check=True)
+
+        # Trigger Perf Output cleanup immediately after the command finishes
+        if run_perf:
+            clean_perf_csv(raw_perf_out, clean_perf_out)
+
+        print("-> Run complete. Sleeping 10s to clear memory caches...")
+        time.sleep(10)
+
+# ============================================================================
+# Main
+# ============================================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Data Structure perf experiments.")
-    parser.add_argument("--DS", type=str, nargs='+', required=True, help="List of data structures to test")
-    parser.add_argument("--UMF", action="store_true", help="Compile with UMF=1")
-    parser.add_argument("--AN", type=int, choices=[0, 1], default=1, help="AutoNUMA (0 or 1)")
-    parser.add_argument("--perlmutter", action="store_true", help="Use Perlmutter config (AMD events, 128 threads)")
-    parser.add_argument("--numDS", type=str, default="1000000", help="Number of elements")
-    parser.add_argument("--numKeys", type=str, default="80", help="Keyspace size")
-    parser.add_argument("--stop", type=int, default=1200, help="Duration to run each combination in seconds (Default: 1200)")
-    parser.add_argument("--ROOT_DIR", type=str, default=os.path.expanduser("~/NUMATyping"), help="Path to root directory")
+    if "--help" in sys.argv or "-h" in sys.argv:
+        show_help()
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--DS', type=str, nargs='+', required=True)
+    parser.add_argument('--ROOT_DIR', default=os.path.expanduser("~/NUMATyping"))
+    parser.add_argument('--numafy', action='store_true')
+    parser.add_argument('--UMF', action='store_true')
+    parser.add_argument("-d", "--output")
+    parser.add_argument('--AN', type=int, choices=[0, 1], default=1)
+    parser.add_argument('--graph', action='store_true')
+    parser.add_argument('--perlmutter', action='store_true')
+    parser.add_argument('--jemalloc-root')
+    parser.add_argument('--perf', action='store_true')
     
+    parser.add_argument('--numDS', type=str, default="3000000")
+    parser.add_argument('--numKeys', type=str, default="240")
+
     try:
         args = parser.parse_args()
-    except Exception as e:
-        parser.print_help()
-        sys.exit(1)
+    except:
+        show_help()
 
-    # Perlmutter specific defaults fallback
-    if args.perlmutter:
-        if '--numDS' not in sys.argv:
-            args.numDS = "3000000"
-        if '--numKeys' not in sys.argv:
-            args.numKeys = "240"
-
-    ROOT_DIR = Path(args.ROOT_DIR).resolve()
-    if not ROOT_DIR.exists():
+    ROOT_DIR = os.path.abspath(args.ROOT_DIR)
+    if not os.path.exists(ROOT_DIR):
         print(f"Error: ROOT_DIR {ROOT_DIR} does not exist.")
         sys.exit(1)
 
-    EXPERIMENT_FOLDER = ROOT_DIR / "Output" / "DataStructureTests"
-
-    # --- Authenticate sudo once and keep it alive ---
-    print("\n--- Initializing Sudo Access ---")
-    print("You may be prompted for your password to allow 'perf stat' to run without interruption.")
-    try:
-        subprocess.run(["sudo", "-v"], check=True)
-    except subprocess.CalledProcessError:
-        print("Error: Sudo authentication failed. Exiting.")
-        sys.exit(1)
-        
-    # Start the daemon thread to keep sudo active
-    sudo_thread = threading.Thread(target=keep_sudo_alive, daemon=True)
-    sudo_thread.start()
-    print("Sudo ticket initialized and keep-alive daemon started.")
-    # -----------------------------------------------------
-
-    # 1) Route output directly to the Graphs directory
+    EXPERIMENT_FOLDER = os.path.join(ROOT_DIR, "Output/DataStructureTests")
+    OUT_BASE = Path(ensure_dir(args.output)) if args.output else Path(ensure_dir(os.path.join(ROOT_DIR, "Result")))
+    GRAPH_BASE = Path(ensure_dir(os.path.join(ROOT_DIR, "Graphs")))
+    
+    JEMALLOC_ROOT = args.jemalloc_root or get_spack_path("jemalloc")
+    
     an_folder = "AN_on" if args.AN == 1 else "AN_off"
-    output_dir = ROOT_DIR / "Graphs" / "perf" / an_folder
 
-    # 2) Build execution binary
-    compile_experiment(args.UMF, EXPERIMENT_FOLDER)
+    header_str = "Date, Time, DS_name, num_DS, num_threads, thread_config, DS_config, duration, keyspace, interval, Op0, Op1, TotalOps\n"
 
-    # 3) Run Experiments
-    perf_ds_experiment(output_dir, args.DS, EXPERIMENT_FOLDER, args.AN, args.numDS, args.numKeys, args.perlmutter, args.stop)
+    try:
+        compile_experiment(args.UMF, args.numafy, ROOT_DIR, JEMALLOC_ROOT, EXPERIMENT_FOLDER)
 
-    print(f"\nALL COMPLETE. Results saved under: {output_dir.resolve()}")
+        for ds in args.DS:
+            print(f"\n=======================================================")
+            print(f"Starting Experiment Phase for Data Structure: {ds}")
+            print(f"=======================================================")
+
+            file_suffix = "_perl.csv" if args.perlmutter else ".csv"
+            specific_filename = f"{ds}_{args.numDS}_{args.numKeys}_experiments{file_suffix}"
+            exp_filename = f"{ds}_experiments.csv"
+            
+            out_specific_path = OUT_BASE / an_folder / specific_filename
+            graph_specific_path = GRAPH_BASE / an_folder / specific_filename
+            
+            out_exp_path = OUT_BASE / an_folder / exp_filename
+            graph_exp_path = GRAPH_BASE / an_folder / exp_filename
+
+            for target_path in [out_exp_path, graph_exp_path]:
+                if not target_path.exists() or target_path.stat().st_size == 0:
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    with target_path.open("w") as f:
+                        f.write(header_str)
+
+            for spec_path in [out_specific_path, graph_specific_path]:
+                spec_path.parent.mkdir(parents=True, exist_ok=True)
+                with spec_path.open("w") as f:
+                    f.write(header_str)
+
+            run_experiment(out_specific_path.absolute(), graph_specific_path.parent, EXPERIMENT_FOLDER, ds, args.numDS, args.numKeys, args.AN, args.perlmutter, args.perf)
+
+            with open(out_specific_path, "r") as f:
+                lines = f.readlines()
+                data_lines = lines[1:] 
+
+            with open(graph_specific_path, "a") as f:
+                f.writelines(data_lines)
+
+            with open(out_exp_path, "a") as f:
+                f.writelines(data_lines)
+            with open(graph_exp_path, "a") as f:
+                f.writelines(data_lines)
+                
+            print(f"--- Data safely written to isolated files and appended to master aggregates ---")
+
+            if args.graph:
+                plot_script = os.path.join(ROOT_DIR, "scripts/line_plot_bst.py")
+                subprocess.run(f'python3 {plot_script} --AN {args.AN} --ds_name "{ds}" --numDS {args.numDS} --numKeys {args.numKeys}', shell=True)
+                
+            print(f"COMPLETE. Primary Results for {ds} saved to: {out_specific_path}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"\n[FATAL ERROR] Experiment failed during execution (Exit Code: {e.returncode})")
+        sys.exit(e.returncode)
+    except Exception as e:
+        print(f"\n[FATAL ERROR] An unexpected runtime error occurred: {e}")
+        sys.exit(1)
