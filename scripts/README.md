@@ -206,6 +206,39 @@ in Excel or Sheets.
 
 ---
 
+## `campaign_comparison.py` — compare campaigns against each other
+
+The cross-campaign counterpart of `an_comparison.py`: for every **pair** of the
+given campaigns and every AutoNUMA mode present in both, it writes tables (and
+with `--graph`, figures) into `Campaigns/<bench>/comparisons/` — the bench
+level, next to the slug folders.
+
+```shell
+python3 scripts/campaign_comparison.py --campaigns campaign01 campaign01.1 --graph
+```
+
+| file | contents |
+|---|---|
+| `camp01v01.1_AN_off.csv` | per-config throughput of A vs B with change %, then the numa/numa-vs-numa/regular gap in each campaign and its shift in pp |
+| `..._throughput_change.png/.pdf` | labelled circles per workload per config: how much B differs from A |
+| `..._gap.png/.pdf` | dumbbell per workload: the gap in A (hollow) → in B (filled) |
+
+| option | meaning |
+|---|---|
+| `--campaigns` | two or more slugs; every pair is compared (required) |
+| `--graph` | also render the two figures per pair/mode |
+| `--baseline`, `--compare` | which gap to track (defaults `numa/regular`, `numa/numa`) |
+| `--bench`, `--ROOT_DIR` | as elsewhere |
+
+If two campaigns used different reporting intervals, values are converted to
+M ops/s so they stay comparable; otherwise they are the usual M ops/interval.
+
+> Between-session drift is ~0.4% on this machine (measured), so treat
+> cross-campaign throughput changes under ~1% as inconclusive; the *gap* columns
+> compare within-campaign ratios and are much more robust.
+
+---
+
 ## A full session, start to finish
 
 ```shell

@@ -27,6 +27,12 @@ YCSB_WORKLOADS = [
     "A-50-50-50,D-100-0-50",
 ]
 
+# DataStructureTests emits: date, time, DS_name, num_DS, num_threads, th_config,
+# DS_config, duration, keyspace, interval, ops per node..., total.
+DS_HEADER = ("Date, Time, DS_Name, Num_DS, Num_Threads, Thread_Config, DS_Config, "
+             "Duration, Keyspace, Interval, Ops_Node0, Ops_Node1, Total_Ops")
+
+
 def ycsb_argv(binary, th, ds, p):
     return [binary,
             f"--th_config={th}", f"--DS_config={ds}",
@@ -69,18 +75,24 @@ BENCHES = {
             param("interval", int, 20,        "reporting interval seconds"),
         ],
     },
-    "bst": {
+    # DataStructureTests -- the transactional BST benchmark.  Bench key is "DS",
+    # so campaigns land in Campaigns/DS/<slug>/.  Column names deliberately match
+    # the ycsb header (Thread_Config / DS_Config / Duration / Total_Ops) so
+    # an_comparison.py and campaign_comparison.py work on DS campaigns unchanged.
+    "DS": {
         "binary":    "Output/DataStructureTests/bin/datastructures",
-        "header":    None,          # TODO: dynamic op columns; set when wiring BST
+        "header":    DS_HEADER,
         "argv":      bst_argv,
         "workloads": ["BinarySearchTree"],   # sweep dimension = data-structure name
         "cwd":       "Output/DataStructureTests",
         "params": [
-            param("numDS",    int, 1000,      "number of data structures"),
+            # defaults follow paper section 6.3.1: 1M indices x 80 keys (~2 GB),
+            # measured over 10 minutes.
+            param("numDS",    int, 1000000,   "number of data structures (indices)"),
             param("threads",  int, 80,        "worker threads"),
-            param("keys",     int, 100000000, "keyspace size"),
-            param("duration", int, 1200,      "seconds per config"),
-            param("interval", int, 20,        "reporting interval seconds"),
+            param("keys",     int, 80,        "keyspace per tree"),
+            param("duration", int, 600,       "seconds per config"),
+            param("interval", int, 60,        "reporting interval seconds"),
         ],
     },
 }

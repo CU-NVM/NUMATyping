@@ -1,5 +1,4 @@
-/*! \file TestSuite.cpp
- * \brief Testsuite implementation which allows for testing of various data structures
+/*Testsuite implementation which allows for testing of various data structures
  * \author Nii Mante
  * \date 10/28/2012
  *
@@ -374,3 +373,4 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 
 void global_cleanup(){
 }
+

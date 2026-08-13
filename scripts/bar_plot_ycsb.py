@@ -33,6 +33,10 @@ CORE OPTIONS:
                            manifest.md and git_diff.txt).
     --normalize CFG        Config to normalize throughput against: regular/regular,
                            numa/regular, or regular/numa (Default: numa/regular).
+    --baseline-from M      With --AN both, which mode supplies the baseline:
+                           own (default, per-mode) | on | off.  Using on/off puts
+                           every bar on ONE scale, so solid and striped bars
+                           become directly comparable.
     --workloads STR [STR]  List of workloads to plot.
                            (Default: AD, A, B, C, D, E, F configurations)
     --perlmutter           Read from/save to 'Perlmutter/' directory, use 128 threads,
@@ -51,7 +55,7 @@ WORKFLOW EXAMPLE:
 # Data Extraction Function
 # ============================================================================
 
-def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop_time, is_zipfian=False, baseline_config='regular-regular', suffix='', campaign_mode=False):
+def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop_time, is_zipfian=False, baseline_config='regular-regular', suffix='', campaign_mode=False, external_baseline=None):
     configs = ['numa-numa', 'numa-regular', 'regular-numa', 'regular-regular']
     raw_data = {c: [] for c in configs}
     x_labels = []
@@ -155,11 +159,17 @@ def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop
             else:
                 raw_data[c].append(0)
 
-    # Normalization Step (baseline_config passed in; default regular-regular)
+    # Normalization Step (baseline_config passed in; default regular-regular).
+    # external_baseline lets BOTH AutoNUMA modes divide by ONE mode's baseline, so
+    # solid and striped bars land on a single scale and become comparable to each
+    # other -- otherwise each mode is normalized to its own baseline and only
+    # within-mode comparisons are meaningful.
+    own_baseline = list(raw_data[baseline_config])
+    baseline_series = external_baseline if external_baseline is not None else own_baseline
     normalized_data = {c: [] for c in configs}
-    
+
     for i in range(len(x_labels)):
-        baseline_val = raw_data[baseline_config][i]
+        baseline_val = baseline_series[i] if i < len(baseline_series) else 0
         for c in configs:
             if baseline_val == 0:
                 normalized_data[c].append(0) 
@@ -177,7 +187,7 @@ def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop
         
     x_labels.append("Geomean")
                 
-    return normalized_data, x_labels
+    return normalized_data, x_labels, own_baseline
 
 # ============================================================================
 # Main Logic
@@ -198,6 +208,12 @@ def parse_args():
     parser.add_argument('--workloads', type=str, nargs='+', default=default_workloads)
     parser.add_argument('--perlmutter', action='store_true')
     parser.add_argument('--zipfian', action='store_true', help="Read ycsb_<wl>_zipfian.csv files and prefix output with 'zipfian_'.")
+    parser.add_argument('--baseline-from', type=str, default='own',
+                        choices=['own', 'on', 'off'], dest='baseline_from',
+                        help="Which AutoNUMA mode supplies the baseline when --AN both: "
+                             "'own' normalizes each mode to itself (default, bars NOT "
+                             "comparable across modes), 'on'/'off' normalizes both modes "
+                             "to that mode's baseline so all bars share one scale.")
     parser.add_argument('--normalize', type=str, default='numa/regular',
                         choices=['regular/regular', 'numa/regular', 'regular/numa'],
                         help="Config to normalize throughput against (default: numa/regular).")
@@ -237,12 +253,17 @@ def main():
 
     # --- Fetch Data ---
     if args.AN == 'both':
-        data_on, x_labels = get_data("AN_on", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
-        data_off, _ = get_data("AN_off", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
+        shared = None
+        if args.baseline_from in ("on", "off"):
+            src = "AN_on" if args.baseline_from == "on" else "AN_off"
+            _, _, shared = get_data(src, base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
+            print(f"Normalizing BOTH modes against {src} {args.normalize}")
+        data_on, x_labels, _ = get_data("AN_on", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode, shared)
+        data_off, _, _ = get_data("AN_off", base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode, shared)
         an_folder_name = "AN_both"
     else:
         an_folder = "AN_on" if args.AN == 'on' else "AN_off"
-        data, x_labels = get_data(an_folder, base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
+        data, x_labels, _ = get_data(an_folder, base_dir, target_threads, args.workloads, args.perlmutter, args.stop, args.zipfian, baseline_config, args.suffix, campaign_mode)
         an_folder_name = an_folder
 
     # --- Plotting ---
@@ -367,7 +388,8 @@ def main():
     joined_labels = "_".join(x_labels[:-1]) # Don't include "Geomean" in the filename
 
     # Naming convention: [Normalization]_normalized_[Workloads]
-    base_out_name = f"{baseline_config}_normalized_{joined_labels}"
+    shared_tag = "" if args.baseline_from == "own" else f"_vsAN{args.baseline_from}"
+    base_out_name = f"{baseline_config}_normalized_{joined_labels}{shared_tag}"
 
     if campaign_mode:
         # Drop figures directly into the slug folder, next to manifest.md / git_diff.txt.

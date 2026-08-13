@@ -73,7 +73,7 @@ public:
         #else
             p = numa_alloc_onnode(sz, 0);
         #endif
-        
+
         if (p == nullptr) {
             std::cout<<"allocation failed\n";
             throw std::bad_alloc();
@@ -81,6 +81,9 @@ public:
         return p;
     }
 
+    // sz is the total byte count the compiler asks for, so it already covers the
+    // element count (and any array cookie). Using sizeof(T) here allocated room
+    // for exactly one element regardless of how many were requested.
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
@@ -164,7 +167,7 @@ public:
         #else
             p = numa_alloc_onnode(sz, 1);
         #endif
-        
+
         if (p == nullptr) {
             std::cout<<"allocation failed\n";
             throw std::bad_alloc();
@@ -172,6 +175,9 @@ public:
         return p;
     }
 
+    // sz is the total byte count the compiler asks for, so it already covers the
+    // element count (and any array cookie). Using sizeof(T) here allocated room
+    // for exactly one element regardless of how many were requested.
     static void* operator new[](std::size_t sz){
         void* p;
         #ifdef UMF
@@ -246,3 +252,4 @@ numa<BinaryNode*,1> rightChild;
 };
 
 #endif /* _BINARYNODE_HPP_ */
+
