@@ -56,6 +56,7 @@ def bst_argv(binary, th, ds, p):
 
 BENCHES = {
     "ycsb": {
+        "suite":     "ycsb",          # directory numafy.py transforms
         "binary":    "Output/ycsb/bin/ycsb",
         "header":    YCSB_HEADER,
         "argv":      ycsb_argv,
@@ -80,6 +81,8 @@ BENCHES = {
     # the ycsb header (Thread_Config / DS_Config / Duration / Total_Ops) so
     # an_comparison.py and campaign_comparison.py work on DS campaigns unchanged.
     "DS": {
+        "suite":     "DataStructureTests",   # bench key != suite dir, so numafy
+                                             # and Output/ must use this name
         "binary":    "Output/DataStructureTests/bin/datastructures",
         "header":    DS_HEADER,
         "argv":      bst_argv,

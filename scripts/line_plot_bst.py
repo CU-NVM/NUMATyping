@@ -13,6 +13,11 @@ import os
 # ============================================================================
 
 def get_data(an_folder, root_dir, target_threads, args):
+    if args.campaign:
+        # Campaigns/<bench>/<slug>/<AN_mode>/<bench>_<workload>.csv
+        base_dir = root_dir / "Campaigns" / args.bench / args.campaign / an_folder
+        csv_path = base_dir / f"{args.bench}_{args.ds_name}.csv"
+        return _read_csv(csv_path, target_threads, args)
     if args.perlmutter:
         base_dir = root_dir / "Graphs" / "Perlmutter" / an_folder
         if not base_dir.exists():
@@ -28,21 +33,31 @@ def get_data(an_folder, root_dir, target_threads, args):
 
     csv_filename = f"{args.ds_name}_{args.numDS}_{args.numKeys}_experiments{file_suffix}"
     csv_path = base_dir / csv_filename
-    
+    return _read_csv(csv_path, target_threads, args)
+
+
+def _read_csv(csv_path, target_threads, args):
+    """Load one CSV into {config: DataFrame with a throughput_millions column}.
+
+    Column names are lower-cased first, so both the legacy headers and the
+    campaign headers written by benchmarks.py (Thread_Config / DS_Config /
+    Duration / Num_Threads) are accepted.
+    """
     data_dict = {}
     configs = ['numa-numa', 'numa-regular', 'regular-numa', 'regular-regular']
-    
+
     if not csv_path.exists() or csv_path.stat().st_size == 0:
         print(f"Warning: File not found at {csv_path}")
         return data_dict
 
     df = pd.read_csv(csv_path, skipinitialspace=True)
-    df.columns = df.columns.str.strip()
-    
-    rename_map = {col: 'DS_config' for col in df.columns if col.lower() in ['ds_config', 'ds config']}
-    rename_map.update({col: 'thread_config' for col in df.columns if col.lower() in ['th_config', 'thread_config']})
-    df.rename(columns=rename_map, inplace=True)
-        
+    df.columns = df.columns.str.strip().str.lower()
+    df.rename(columns={'th_config': 'thread_config', 'ds config': 'ds_config'},
+              inplace=True)
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = df[col].astype(str).str.strip()
+
     df['duration'] = pd.to_numeric(df['duration'], errors='coerce')
     df['num_threads'] = pd.to_numeric(df['num_threads'], errors='coerce')
 
@@ -54,7 +69,7 @@ def get_data(an_folder, root_dir, target_threads, args):
 
     for c in configs:
         th_conf, ds_conf = c.split('-')
-        group = plot_df[(plot_df['thread_config'] == th_conf) & (plot_df['DS_config'] == ds_conf)].copy()
+        group = plot_df[(plot_df['thread_config'] == th_conf) & (plot_df['ds_config'] == ds_conf)].copy()
         if group.empty: continue
             
         group = group.dropna(subset=['duration', 'real_total_ops']).sort_values('duration')
@@ -88,20 +103,33 @@ def get_data(an_folder, root_dir, target_threads, args):
 
 def parse_args():
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--AN', type=str, choices=['0', '1', 'both'], required=True)
+    parser.add_argument('--AN', type=str, choices=['on', 'off', 'both', '0', '1'], required=True,
+                        help="AutoNUMA mode: on | off | both  ('1'/'0' accepted for back-compat)")
+    parser.add_argument('--campaign', type=str, default=None,
+                        help="Campaign slug: read Campaigns/<bench>/<slug>/AN_{on,off}/ "
+                             "and write the figure into Campaigns/<bench>/<slug>/.")
+    parser.add_argument('--bench', type=str, default='DS',
+                        help="Benchmark folder under Campaigns/ (default: DS)")
     parser.add_argument('--ds_name', type=str, default="bst")
     parser.add_argument('--numDS', type=str, default="1000000")
     parser.add_argument('--numKeys', type=str, default="80")
     parser.add_argument('--perlmutter', action='store_true')
     parser.add_argument('--short', action='store_true', help="Read from '_short' files and append '_short' to outputs")
     parser.add_argument('--sample', type=int, default=0, help="Downsample data to this interval in seconds")
-    parser.add_argument('--start', type=int, default=300, help="Skip the first X seconds of data (Default: 300)")
+    parser.add_argument('--start', type=int, default=None,
+                        help="Skip the first X seconds (default: 300 legacy, 0 in campaign mode)")
     parser.add_argument('--stop', type=int, default=0, help="Stop graphing at this many seconds (0 = end of data)")
     parser.add_argument('--ROOT_DIR', type=str, default=os.path.expanduser("~/NUMATyping"))
     return parser.parse_args()
 
 def main():
     args = parse_args()
+    # accept the legacy 1/0 spelling
+    args.AN = {'1': 'on', '0': 'off'}.get(args.AN, args.AN)
+    if args.start is None:
+        args.start = 0 if args.campaign else 300
+    if args.campaign and args.ds_name == 'bst':
+        args.ds_name = 'BinarySearchTree'
 
     # Perlmutter specific defaults
     if args.perlmutter:
@@ -120,7 +148,7 @@ def main():
         data_on = get_data("AN_on", root_dir, target_threads, args)
         data_off = get_data("AN_off", root_dir, target_threads, args)
     else:
-        an_folder_name = "AN_on" if args.AN == '1' else "AN_off"
+        an_folder_name = "AN_on" if args.AN == 'on' else "AN_off"
         data = get_data(an_folder_name, root_dir, target_threads, args)
 
     # --- ADJUSTED VERTICAL HEIGHT ---
@@ -143,10 +171,10 @@ def main():
     else:
         for i, c in enumerate(configs):
             if c in data:
-                line_s = '--' if args.AN == '0' else '-'
+                line_s = '--' if args.AN == 'off' else '-'
                 ax.plot(data[c]['duration'], data[c]['throughput_millions'], 
                         color=custom_colors[i], linestyle=line_s, 
-                        **(marker_style if args.AN=='0' else {'linewidth': 2}))
+                        **(marker_style if args.AN == 'off' else {'linewidth': 2}))
                 all_y.extend(data[c]['throughput_millions'].dropna().tolist())
 
     # --- ADVANCED SCALING ---
@@ -206,20 +234,20 @@ def main():
     plt.tight_layout()
 
     # Directory/Save Logic
-    path_base = root_dir / "Graphs"
-    if args.perlmutter:
-        path_base = path_base / "Perlmutter"
-    
-    target_dir = path_base / an_folder_name / "figs"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Generate the base name based on the presence of --short
-    short_str = "_short" if args.short else ""
-    
-    if args.AN == 'both':
-        base_out_name = f"{args.ds_name}_{args.numDS}_{args.numKeys}_AN_Both_Result{short_str}"
+    if args.campaign:
+        target_dir = root_dir / "Campaigns" / args.bench / args.campaign
+        base_out_name = f"throughput_over_time_{args.ds_name}_AN_{args.AN}"
     else:
-        base_out_name = f"{args.ds_name}_{args.numDS}_{args.numKeys}_Result{short_str}"
+        path_base = root_dir / "Graphs"
+        if args.perlmutter:
+            path_base = path_base / "Perlmutter"
+        target_dir = path_base / an_folder_name / "figs"
+        short_str = "_short" if args.short else ""
+        if args.AN == 'both':
+            base_out_name = f"{args.ds_name}_{args.numDS}_{args.numKeys}_AN_Both_Result{short_str}"
+        else:
+            base_out_name = f"{args.ds_name}_{args.numDS}_{args.numKeys}_Result{short_str}"
+    target_dir.mkdir(parents=True, exist_ok=True)
         
     save_path_png = target_dir / f"{base_out_name}.png"
     save_path_pdf = target_dir / f"{base_out_name}.pdf"

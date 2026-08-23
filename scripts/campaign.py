@@ -32,7 +32,7 @@ Example:
         --mix uniform --hash djb2 --buckets 133300 --tables 1000 \\
         --keys 100000000 --duration 1200 --interval 20
 """
-import argparse, subprocess, socket, platform, sys, time, datetime
+import argparse, os, subprocess, socket, platform, sys, time, datetime
 from pathlib import Path
 import benchmarks
 
@@ -77,42 +77,98 @@ def machine_info():
                 break
     except Exception:
         pass
+    me = machine_env()
     return {"host": socket.gethostname(), "cpu": cpu,
-            "nodes": nodes, "kernel": platform.release()}
+            "nodes": nodes, "kernel": platform.release(),
+            "bind": me["NUMACTL_BIND"],
+            "node_order": me["NUMA_NODE_ORDER"] or "auto"}
 
 
 def build(root, bench, umf=True, do_numafy=False):
-    """Optionally numafy the suite, then (re)compile Output/<bench>."""
+    """Optionally numafy the suite, then (re)compile Output/<suite>.
+
+    The bench key and the suite directory are not always the same -- bench "DS"
+    lives in DataStructureTests/ -- so both numafy and the Makefile path use the
+    suite name declared in benchmarks.py.
+    """
     root = Path(root)
+    suite = benchmarks.BENCHES[bench].get("suite", bench)
     if do_numafy:
         jr = subprocess.run("spack location -i jemalloc", shell=True,
                             capture_output=True, text=True).stdout.strip()
         cmd = f"python3 {root/'scripts'/'numafy.py'} --ROOT_DIR={root} --umf=1"
         if jr:
             cmd += f" --jemalloc-root={jr}"
-        cmd += f" {bench}"
+        cmd += f" {suite}"
         print(f"--- numafy: {cmd}")
         subprocess.run(cmd, shell=True, executable="/bin/bash", check=True)
-    folder = root / "Output" / bench
+    folder = root / "Output" / suite
     print(f"--- compile: make -C {folder} {'UMF=1' if umf else ''}")
     subprocess.run(["make", "-C", str(folder), "clean"])
     subprocess.run(["make", "-C", str(folder), f"ROOT_DIR={root}"]
                    + (["UMF=1"] if umf else []), check=True)
 
 
-def numactl_prefix(an_value):
-    base = "numactl --cpunodebind=0,1 --membind=0,1"
-    return ("numactl --balancing --cpunodebind=0,1 --membind=0,1"
-            if an_value == 1 else base)
+MACHINE_ENV_DEFAULTS = {
+    # stormbreaker literals -- what this script hardcoded before machine.env
+    # existed.  Keeping them as the fallback means a checkout with no
+    # machine.env behaves exactly as it always did.
+    "NUMACTL_BIND":    "--cpunodebind=0,1 --membind=0,1",
+    "NUMA_NODE_ORDER": "",
+}
+
+
+def machine_env(root=ROOT):
+    """Parse ROOT/machine.env ('export K=V' / 'K=V') into a dict.
+
+    machine.env is written by scripts/detect_machine.sh and pins the physical
+    NUMA nodes this machine's experiment runs on.  Reading it here is what lets
+    the same campaign run on stormbreaker (nodes 0,1) and on an 8-node machine
+    (nodes 0,7) with no edit to this file.
+    """
+    env = dict(MACHINE_ENV_DEFAULTS)
+    try:
+        for line in (Path(root) / "machine.env").read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            v = v.split("#", 1)[0].strip().strip('"').strip("'")
+            if v:
+                env[k.strip()] = v
+    except FileNotFoundError:
+        pass
+    return env
+
+
+def numactl_prefix(an_value, root=ROOT):
+    """numactl prefix; --balancing only when AutoNUMA is on."""
+    bind = machine_env(root)["NUMACTL_BIND"]
+    return f"numactl {'--balancing ' if an_value == 1 else ''}{bind}"
 
 
 def run_config(argv, an_value, out_path, log_path, cwd=None):
     """Run a pre-built argv under numactl; append stdout->CSV, stderr->log."""
     full = numactl_prefix(an_value).split() + argv
+    # numaLib/numa_nodemap.hpp reads NUMA_NODE_ORDER to map logical partition k
+    # to a physical node.  Pass it explicitly so the thread pinning and the UMF
+    # pools land on exactly the nodes numactl bound us to -- if these two ever
+    # disagree, allocation on an unbound node fails at runtime.
+    env = dict(os.environ)
+    order = machine_env()["NUMA_NODE_ORDER"]
+    if order:
+        env["NUMA_NODE_ORDER"] = order
     with open(out_path, "a") as out, open(log_path, "a") as log:
         log.write("# " + " ".join(full) + "\n")
+        if order:
+            log.write(f"# NUMA_NODE_ORDER={order}\n")
         log.flush()
-        return subprocess.run(full, stdout=out, stderr=log, cwd=cwd).returncode
+        return subprocess.run(full, stdout=out, stderr=log, cwd=cwd,
+                              env=env).returncode
 
 
 def write_or_append_manifest(path, *, bench, binary, purpose, git_hash, git_subject,
@@ -134,7 +190,9 @@ def write_or_append_manifest(path, *, bench, binary, purpose, git_hash, git_subj
         f.write(f"- **benchmark:** {bench}  (`{binary}`)\n")
         f.write(f"- **git commit:** {git_hash} -- {git_subject}\n")
         f.write(f"- **machine:** {machine['host']} - {machine['cpu']} - "
-                f"{machine['nodes']} NUMA nodes - kernel {machine['kernel']}\n\n")
+                f"{machine['nodes']} NUMA nodes - kernel {machine['kernel']}\n")
+        f.write(f"- **numa binding:** `{machine['bind']}` - "
+                f"NUMA_NODE_ORDER={machine['node_order']}\n\n")
         f.write("## Parameters\n| param | value |\n|-------|-------|\n")
         for k, v in params.items():
             f.write(f"| {k} | {v} |\n")
@@ -219,6 +277,35 @@ def main():
     bench = benchmarks.BENCHES[bench_name]
 
     git_hash, subject = git_gate()
+
+    # ---- announce the NUMA binding: it is machine-specific and silently wrong
+    # bindings are the worst failure mode here (a full campaign of valid-looking
+    # numbers taken on the wrong nodes).  Say out loud what we resolved.
+    me = machine_env()
+    if not (ROOT / "machine.env").exists():
+        print("WARNING: no machine.env found -- falling back to "
+              f"'{MACHINE_ENV_DEFAULTS['NUMACTL_BIND']}' (stormbreaker).\n"
+              "         Run  bash scripts/detect_machine.sh  first on a new machine.\n")
+    print(f"--- numa binding: {me['NUMACTL_BIND']}"
+          f"   NUMA_NODE_ORDER={me['NUMA_NODE_ORDER'] or 'auto-detect'}")
+
+    # The benchmarks split --threads evenly across the two partitions
+    # (num_threads / 2, integer division), so an odd value silently drops one and
+    # a value larger than the bound nodes' CPU count oversubscribes.  Warn rather
+    # than override: the thread count is a recorded experiment parameter.
+    pt = me.get("PARTITION_THREADS")
+    th = getattr(args, "threads", None)
+    if pt and th is not None:
+        pt = int(pt)
+        if th != pt:
+            print(f"WARNING: --threads {th} != PARTITION_THREADS {pt} "
+                  f"(hw threads on nodes {me['NUMA_NODE_ORDER']}).\n"
+                  f"         {'Oversubscribed' if th > pt else 'Under-using the bound nodes'}"
+                  f" -- pass --threads {pt} unless this is deliberate.")
+    if th is not None and th % 2:
+        print(f"WARNING: --threads {th} is odd; the benchmarks use num_threads/2 "
+              f"per node, so one thread will be dropped.")
+
     if args.numafy:
         build(ROOT, bench_name, umf=not args.no_umf, do_numafy=True)
 
