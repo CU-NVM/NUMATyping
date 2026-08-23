@@ -172,13 +172,16 @@ def run_config(argv, an_value, out_path, log_path, cwd=None):
 
 
 def write_or_append_manifest(path, *, bench, binary, purpose, git_hash, git_subject,
-                             machine, an_value, params, configs, workloads, slug):
+                             machine, an_value, params, configs, workloads, slug,
+                             an_forced=False, kernel_an=None):
     """Shared experiment manifest at the slug level.  The first run writes the
     identity block + the Runs list; a later run (already verified by the guards to
     match on commit + config) just appends its own line to the Runs list."""
     an_str = "on" if an_value == 1 else "off"
+    forced = (f" -- FORCED via --an-mode (kernel numa_balancing={kernel_an}; "
+              f"numactl --balancing only, not a kernel toggle)" if an_forced else "")
     run_line = (f"- AN_{an_str} -- {datetime.datetime.now():%Y-%m-%d %H:%M:%S} "
-                f"-- kernel {machine['kernel']}\n")
+                f"-- kernel {machine['kernel']}{forced}\n")
     if path.exists():                                   # a sibling AN run already created it
         with open(path, "a") as f:
             f.write(run_line)
@@ -249,6 +252,15 @@ def parse_args():
     p.add_argument("--numafy", action="store_true",
                    help="numafy the suite and (re)compile Output/<bench> before running")
     p.add_argument("--no-umf", action="store_true", help="compile without UMF")
+    p.add_argument("--an-mode", choices=["auto", "on", "off"], default="auto",
+                   help="AutoNUMA mode. 'auto' (default) reads "
+                        "/proc/sys/kernel/numa_balancing -- correct when you can "
+                        "toggle the kernel knob. 'on'/'off' FORCE the mode where "
+                        "you cannot (no root, e.g. a shared HPC system): the "
+                        "contrast then comes from numactl --balancing alone, "
+                        "which is weaker than a kernel toggle. The manifest "
+                        "records that it was forced and what the kernel actually "
+                        "reported, so the two never get confused.")
     p.add_argument("--configs", nargs="+", default=DEFAULT_CONFIGS)
     p.add_argument("--workloads", nargs="+", default=None, help="default: the bench's full list")
     p.add_argument("--refresh", type=int, default=30, help="seconds to settle memory between configs")
@@ -309,7 +321,15 @@ def main():
     if args.numafy:
         build(ROOT, bench_name, umf=not args.no_umf, do_numafy=True)
 
-    an_value, an_folder = autonuma()
+    kernel_an, _ = autonuma()                    # what the kernel actually reports
+    if args.an_mode == "auto":
+        an_value, an_folder = kernel_an, ("AN_on" if kernel_an == 1 else "AN_off")
+    else:
+        an_value = 1 if args.an_mode == "on" else 0
+        an_folder = f"AN_{args.an_mode}"
+        print(f"--- AutoNUMA FORCED {args.an_mode} "
+              f"(kernel numa_balancing reports {kernel_an}); the contrast is "
+              f"numactl --balancing only, not a kernel toggle -- recorded in the manifest.")
     binary    = str(ROOT / bench["binary"])
     workloads = args.workloads or bench["workloads"]
     exp_dir   = ROOT / "Campaigns" / bench_name / args.slug   # experiment = slug
@@ -349,6 +369,7 @@ def main():
                              purpose=args.purpose or args.slug, git_hash=git_hash,
                              git_subject=subject, machine=machine_info(),
                              an_value=an_value, params=params,
+                             an_forced=(args.an_mode != "auto"), kernel_an=kernel_an,
                              configs=args.configs, workloads=workloads, slug=args.slug)
     diff_path = exp_dir / "git_diff.txt"
     if not diff_path.exists():                                # same commit for every run
@@ -370,7 +391,7 @@ def main():
         out.write_text(bench["header"] + "\n")
         p = dict(params); p["workload"] = wl
         for i, cfg in enumerate(args.configs):
-            if autonuma()[0] != an_value:                       # reboot safety
+            if autonuma()[0] != kernel_an:                      # reboot safety
                 print(f"  ABORT [{wl}] {cfg}: numa_balancing changed (reboot?). Re-run.")
                 sys.exit(2)
             th, ds = cfg.split("/")

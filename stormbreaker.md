@@ -90,18 +90,91 @@ sudo sysctl -w kernel.numa_balancing=0     # or =1
 ```
 
 **Porting hazard.** On a shared HPC system you will not have root, so this exact
-mechanism cannot work. Do not paper over it by faking the folder name — that
-would silently label AN_on data as AN_off and corrupt the comparison. Options, in
-order of preference:
+mechanism cannot work — and because `autonuma()` drove *both* the folder name and
+the `--balancing` flag, a machine stuck at `numa_balancing=1` could only ever
+produce AN_on runs.
 
-1. Find a site-supported per-job knob for NUMA balancing and use it.
-2. Use `numactl --balancing` / strict binding to approximate the contrast, and
-   **record in the manifest** that the contrast is not a true kernel-level toggle.
-3. Run AN_on only, and state that the AN_off half is unavailable on that machine.
+**The per-process mechanism is `numactl --balancing` (`-b`)**, and it is a real
+control, not a fudge. From `numactl(8)` (verified, numactl 2.0.19):
 
-Whatever you choose, the manifest must not claim a kernel toggle that did not
-happen. `campaign.py` writes the observed `numa_balancing` value into the run
-manifest — keep that honest.
+> `--balancing, -b` — Enable Linux kernel NUMA balancing for the process if it is
+> supported by kernel. **This should only be used with `--membind`**, otherwise
+> ignored.
+
+It sets `MPOL_F_NUMA_BALANCING` on the process's `MPOL_BIND` policy. An explicit
+`--membind` policy without that flag means the kernel does **not** apply NUMA
+balancing to the bound memory; with it, balancing is enabled. So the two arms are
+a genuine contrast:
+
+```
+AN off:  numactl      --cpunodebind=0,7 --membind=0,7   ...
+AN on:   numactl -b   --cpunodebind=0,7 --membind=0,7   ...
+```
+
+Our commands always pass `--membind`, so the flag applies. This is the *same*
+mechanism `campaign.py` already used for the AN_on arm on stormbreaker — the
+difference is only that stormbreaker moved the global knob as well, so both moved
+together. On Perlmutter the global knob stays on and `-b` is the only variable,
+which is arguably the better-isolated experiment.
+
+`campaign.py --an-mode {auto,on,off}` selects it:
+
+- **`auto`** (default) reads `/proc/sys/kernel/numa_balancing` — stormbreaker
+  behaviour, unchanged.
+- **`on` / `off`** force the arm where you cannot touch the kernel knob.
+
+When forced, the manifest run line records that it was forced and what the kernel
+reported, so a per-process contrast is never mistaken for a system-wide one:
+
+```
+- AN_off -- 2026-08-23 15:40 -- kernel 6.11... -- FORCED via --an-mode
+  (kernel numa_balancing=1; numactl --balancing only, not a kernel toggle)
+```
+
+#### Measured on stormbreaker, 2026-08-23 (90 s, -t 40, 20M keys, payload 128)
+
+`-b` is a hard switch, not a soft one — without it the kernel does essentially no
+balancing work for the process at all:
+
+| config | arm | pages migrated | PTE updates |
+|---|---|---|---|
+| numa/regular | off | 14 | 41 |
+| numa/regular | **on** | **612,688** | **3,806,342** |
+| numa/numa | off | 216 | 20,963 |
+| numa/numa | **on** | 26,305 | 265,031 |
+
+Three things follow:
+
+1. **The AN_off arm pays no scan overhead.** It is not scanning and declining to
+   migrate; it is not scanning. So `--an-mode off` (global knob on, process not
+   opted in) is equivalent *in effect* to stormbreaker's global
+   `numa_balancing=0`, and the two machines' arms stay comparable:
+
+   | | stormbreaker | Perlmutter |
+   |---|---|---|
+   | AN_on | global=1 + `numactl -b` | global=1 + `numactl -b` |
+   | AN_off | global=0, no `-b` | global=1, no `-b` |
+
+   The AN_on arms are identical; the AN_off arms differ on paper but measure the
+   same. Task-placement balancing is off in both too, since it is driven by the
+   same hinting-fault scan.
+
+2. **Migration is confined to the bound nodemask.** Under `MPOL_BIND` over
+   `{0,7}`, AutoNUMA can only move pages between 0 and 7 — never to nodes 1-6.
+   That is exactly the two-partition experiment.
+
+3. **`numa<T,k>` pages are never balanced, in either arm.** UMF gives them their
+   own `mbind` policy without `MPOL_F_NUMA_BALANCING`, so they stay pinned. That
+   is the pinning under study, not a gap — and it is why `numa/numa` shows ~23x
+   less migration than `numa/regular`. The 26,305 residual is the non-numa-typed
+   memory (locks, globals, jemalloc metadata) that the paper describes as
+   polluting cross-node pages.
+
+**Pilot with `--DS_config=regular`, never `numa/numa`.** The numa/numa config is
+the one where a perfectly working `-b` looks broken. Judge the pilot by the
+`/proc/vmstat` counters above, not by throughput — a short run has no statistical
+power on ops (the throughput deltas in the runs above were 1.2% and 0.1%, i.e.
+noise at n=1).
 
 ### 2.2 THP
 
@@ -425,7 +498,8 @@ Machine-specific, **must** be re-derived on the target:
 - [ ] `Output/<SUITE>/` — re-numafy and recompile (gitignored)
 - [ ] jemalloc / hwloc / libnuma resolution (apt here, spack there)
 - [ ] clang version and builtin include dir (21 trunk here, 20.1.3 there)
-- [ ] AutoNUMA toggle mechanism (`sudo sysctl` here; needs a story there — §2.1)
+- [ ] AutoNUMA: no root on Perlmutter, so use `--an-mode on|off` — the
+      contrast is `numactl --balancing` only, and the manifest says so (§2.1)
 - [ ] run `bash scripts/detect_machine.sh` (writes machine.env; gitignored,
       so it does NOT arrive with the clone) — §4.3
 - [ ] `perfYCSB.py:106` still hardcodes `0,1`, no Perlmutter branch — §4.3
@@ -452,45 +526,81 @@ Portable, **leave alone**:
 
 ## 9. YCSB specifics (read this before running ycsb anywhere else)
 
-### 9.1 What must stay the same, and what must not
+### 9.1 What to keep, what to scale, what to re-derive
 
-The target is: **same working set and same runtime as the stormbreaker
-campaigns**, on Perlmutter's hardware.
+| keep identical | scale up deliberately | re-derive per machine |
+|---|---|---|
+| `duration`, `warmup`, `interval` | `keys` **and** `buckets` together, so the load factor is preserved (§9.2) | numactl binding: 0,1 -> 0,7 (automatic, §4.3) |
+| `tables`, `mix`, `theta`, `hash` | | `threads` — 64 on nodes 0+7, not 80 (§9.3) |
+| configs and workloads | | AutoNUMA arm — `--an-mode`, not the kernel knob (§2.1) |
 
-| keep identical | change per machine |
-|---|---|
-| `keys`, `payload`, `buckets`, `tables` (the working set) | numactl binding: nodes 0,1 -> 0,7 (automatic, §4.3) |
-| `duration`, `warmup`, `interval` | `threads` (§9.3) |
-| `mix`, `theta`, `hash`, configs, workloads | |
+The trap: `membind` restricts the run to the **bound nodes'** RAM, so a bigger
+machine can give you a *smaller* budget. Nodes 0+7 are 128 GB and 64 threads
+against stormbreaker's 257 GB and 80 threads. Size against 128 GB. Details in
+§9.2.
 
-The trap is memory: `membind` restricts the run to the **bound nodes'** RAM, not
-the node total, so the budget can *shrink* on a bigger machine. Details and the
-sizing check are in §9.2.
+### 9.2 Scaling the working set up for the target machine
 
-### 9.2 Use the campaign parameters unchanged — the working set is machine-independent
-
-**The goal on Perlmutter is the same working set and the same runtime as the
-stormbreaker campaigns.** Working set is a function of `keys`, `payload`,
-`buckets` and `tables` only — nothing about it is machine-dependent. So the
-correct action is to **change nothing**: pass the same parameter values, and the
-experiment is the same experiment on different hardware.
-
-**Do NOT reuse `runYCSB.py`'s Perlmutter defaults.** That script doubles
-everything on `--perlmutter` (`runYCSB.py:82-87`):
+The stormbreaker campaigns are sized for stormbreaker. On a bigger machine you
+should **scale the working set up** — but the amount of room you actually have is
+not what "512 GB node" suggests, and this is the trap:
 
 ```
-keys 200000000   buckets 266600   threads 128   interval 10
+stormbreaker, nodes 0+1  ->  ~257 GB   and  80 hardware threads
+Perlmutter,   nodes 0+7  ->   128 GB   and  64 hardware threads
 ```
 
-Those are the **paper's** Perlmutter numbers (confirmed against the archived data
-in `Old_Results/Graphs/Perlmutter/`, which records `num_threads=128`,
-`buckets=266600`, `num_keys=200000000`, `num_tables=1000`, 7200 s per config).
-They would give **twice the working set** of the current campaigns. They are also
-not reproducible with today's code even if you wanted them: commit `f5dcf278`
-("payload options added ... prefill every other key") changed the prefill from
-the whole keyspace to **every other key**, and added the payload option at all —
-the paper-era CSVs have no payload column. So the paper's parameters and the
-current parameters do not mean the same thing.
+`membind` restricts the run to the **bound nodes'** RAM. Because the experiment
+uses only 2 of Perlmutter's 8 NUMA nodes, it gets **less** memory and **fewer**
+threads than stormbreaker, on a machine that is four times larger overall. Scale
+the working set to fill 128 GB, not 512 GB, and do not try to scale threads up at
+all — 64 is what nodes 0+7 have (§9.3).
+
+(Using more of the machine would mean more than two NUMA partitions. That is a
+code change, not a config change: `MAX_NODE` and `NUMA_NODE_NUM` are compile-time
+and default to 1 and 2, and the `-D` injection is commented out. See §9.9.)
+
+**Do NOT reuse `runYCSB.py`'s `--perlmutter` defaults** (`keys 200000000`,
+`buckets 266600`, `threads 128`, `interval 10`, `runYCSB.py:82-87`). Those are the
+*paper's* numbers, and they are not reproducible with today's code anyway: commit
+`f5dcf278` changed the prefill from the whole keyspace to **every other key** and
+added the payload option, so the same `keys` value no longer means the same record
+count. Scale deliberately from the current campaign values instead.
+
+#### Recommended scaling: 3x
+
+The paper set the precedent — *"We increased our memory footprint by 3x and ran it
+on our large dual-socket (8 NUMA node) AMD EPYC processor to see how our benchmark
+scales."* 3x fits comfortably, keeping the load factor fixed by scaling `buckets`
+with `keys`:
+
+| campaign | keys | buckets | prefill | steady 4x | LF | |
+|---|---|---|---|---|---|---|
+| campaign01 x3 | 300M | 200000 | 22.4 G | 90.9 G | 0.75 | safe |
+| campaign01.1 x3 | 300M | 90011 | 22.4 G | 90.1 G | 1.67 | safe |
+| campaign02 x3 | 300M | 200000 | 22.4 G | 90.9 G | 0.75 | safe |
+| campaign02.1 x3 | 300M | 90011 | 22.4 G | 90.1 G | 1.67 | safe |
+| campaign03 x3 | 300M | 90011 | 13.4 G | 54.3 G | 1.67 | safe |
+| **campaign04 /2** | **10M** | **6669** | 19.2 G | 76.9 G | 0.75 | **scaled DOWN** |
+
+Halve the scaling to 2x (`keys 200M`, `buckets 133367` / `60013`) if you want more
+headroom; that lands around 60 G at the 4x bound.
+
+**campaign04 is the exception and must scale DOWN.** At payload 4096 its
+stormbreaker size (20M keys) reaches **154 G** at the 4x bound — over the 128 GB
+budget before any scaling at all. Halve it to 10M keys / 6669 buckets.
+
+Keep everything else identical: `tables=1000`, `warmup=60`, `duration=300`,
+`interval=20`, `mix`, `theta`, `hash`, configs and workloads. Changing the
+working set is deliberate; changing the rest would make the runs incomparable to
+the stormbreaker campaigns for no benefit.
+
+#### Why the load factor must be scaled with the keyspace
+
+`LF = (keys/2) / (tables x buckets)`. Load factor is the variable campaigns 01 vs
+01.1 and 02 vs 02.1 were built to isolate (0.75 vs 1.67 — shallow vs deep hash
+chains), so scaling `keys` without scaling `buckets` would silently change the
+thing under study. Every `buckets` value above preserves its campaign's LF.
 
 #### The campaigns to reproduce
 
@@ -510,7 +620,7 @@ differ only in mix/payload/buckets/keys:
 (all use `hash=mix`; `short-test` is the 30 s smoke config: 2M keys, 100 tables,
 1009 buckets, `hash=djb2`.)
 
-#### Working set, and whether it fits
+#### Baseline: the stormbreaker sizes these scale from
 
 ```
 record bytes  = payload + 32           (32 B hash-node overhead)
@@ -606,17 +716,17 @@ bash scripts/detect_machine.sh $PWD        # -> NUMA_NODE_ORDER=0,7, bind 0,7
 source machine.env
 
 python3 scripts/campaign.py --bench ycsb --slug campaign01-perl \
-    --purpose "campaign01 working set on Perlmutter nodes 0+7" \
+    --purpose "campaign01 scaled 3x (keys 100M->300M, buckets 66713->200000, LF 0.75 held); AN arm via numactl -b" \
     --mix uniform --hash mix --theta 0.7 \
-    --payload 128 --buckets 66713 --tables 1000 --keys 100000000 \
+    --payload 128 --buckets 200000 --tables 1000 --keys 300000000 \
     --warmup 60 --duration 300 --interval 20 \
-    --threads $PARTITION_THREADS
+    --threads $PARTITION_THREADS --an-mode off
 ```
 
-Run it once with AutoNUMA off and once with it on (§2.1 — on Perlmutter that is
-`numactl --balancing`, which `campaign.py` applies automatically based on
-`/proc/sys/kernel/numa_balancing`; if that file cannot be changed, say so in
-`--purpose` rather than mislabelling the folder).
+Then run the same command again with `--an-mode on`. That is the whole AutoNUMA
+contrast on Perlmutter: `--an-mode off` omits `numactl -b`, `--an-mode on` adds it
+(§2.1). Everything else — commit, parameters, binding — must be identical, and
+`campaign.py`'s manifest guards enforce that.
 
 ### 9.5 ycsb build specifics
 
@@ -703,3 +813,25 @@ Two further notes from the paper, relevant to comparisons:
   keys=100000000 duration=1200`. That is where the 1200 s default comes from. The
   current campaigns deliberately use `duration=300` and different bucket counts,
   which is why §9.4 tells you to pass `--duration 300` explicitly.
+
+### 9.9 Why you cannot simply use more of the machine
+
+The obvious way to exploit an 8-node machine is more NUMA partitions. That is a
+**code change, not a config change**:
+
+- `MAX_NODE` and `NUMA_NODE_NUM` are compile-time macros defaulting to `1` and
+  `2`, and the `-DMAX_NODE=` / `-DNUMA_NODE_NUM=` injection is **commented out**
+  in `numafy.py:119` and every `Output/*/Makefile:3`.
+- ycsb hard-codes two partitions structurally: `ht_node0`/`ht_node1`,
+  `threads_per_node = num_threads / 2`, and a two-column CSV
+  (`Ops_Node0, Ops_Node1`). Four partitions means changing the schema and every
+  consumer of it.
+- `DataStructureTests_four/` is a 4-partition BST variant (`thread_numa<0..3>`),
+  but its `NUMA_NODE_NUM` still defaults to **2** while it indexes logical nodes
+  0-3 — so `NUMA_HANDLES[]` and `jemalloc_pool[]`, both sized `NUM_NODES`, are
+  **indexed out of bounds** unless it is built with `-DNUMA_NODE_NUM=4`, which
+  nothing currently passes. It also still carries the `duration`/`interval`
+  segfault (§5). Do not run it without fixing both.
+
+So for this trip: keep two partitions, scale the working set (§9.2), and treat
+4-partition support as separate work.
