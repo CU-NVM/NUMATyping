@@ -104,6 +104,18 @@ esac
 _np_setup_toolchain() {
     case "$NUMATYPING_MACHINE" in
     perlmutter-cpu)
+        # Python FIRST: the system python3 here is 3.6, and scripts/campaign.py
+        # calls subprocess.run(capture_output=True), which is 3.7+. Without this
+        # every campaign dies in git_gate() with
+        #     TypeError: __init__() got an unexpected keyword argument 'capture_output'
+        # run.py happens to survive on 3.6 because it never calls git_status(),
+        # so a working smoke test proves nothing about campaign.py.
+        # NB: `module load python` (no version) does NOT exist on Perlmutter --
+        # the stale root *.slurm files use it and it fails.
+        module load python/"${NUMATYPING_PYTHON:-3.13-26.8.0}" >/dev/null 2>&1 \
+            || module load python >/dev/null 2>&1 \
+            || echo "machine_profile.sh: warning: no python module loaded" >&2
+
         # Pinned versions, not defaults: `PrgEnv-llvm` currently defaults to
         # 21.1.4, which happens to match stormbreaker's LLVM 21 major -- but a
         # default that moves to 22 would drag the AST-matcher APIs in
@@ -126,6 +138,14 @@ _np_setup_toolchain() {
     local ev
     ev="$(python3 "$ROOT_DIR/scripts/env.py" 2>/dev/null)"
     [ -n "$ev" ] && eval "$ev"
+
+    # campaign.py needs >= 3.7 (subprocess capture_output). Fail here, loudly,
+    # rather than four hours into a batch job.
+    if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,7) else 1)' 2>/dev/null; then
+        echo "machine_profile.sh: ERROR python3 is $(python3 --version 2>&1), campaign.py needs >= 3.7" >&2
+        echo "  load a newer python module, or set NUMATYPING_PYTHON=<module version>" >&2
+        return 1
+    fi
 }
 
 # ---------------------------------------------------------------------------

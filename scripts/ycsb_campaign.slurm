@@ -46,8 +46,9 @@ echo "AutoNUMA arm   : $AN_MODE"
 echo "started        : $(date)"
 
 # --- environment -------------------------------------------------------------
-module load python 2>/dev/null || true
-
+# machine_profile.sh loads python, PrgEnv-llvm, spack and cmake, and verifies
+# python is >= 3.7 (campaign.py needs it; the system python3 is 3.6).
+#
 # Do NOT let the profile rewrite machine.env here: it was derived at configure
 # time, concurrent jobs share this directory, and we would rather VERIFY the
 # compute node matches than silently re-derive and run on whatever we got.
