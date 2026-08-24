@@ -37,6 +37,32 @@
 # the full 4 configs x 7 workloads.  --duration 300 is passed explicitly because
 # benchmarks.py defaults it to 1200, which no campaign used.
 #
+#
+# MEASURED 2026-08-23 on Perlmutter: the 4x steady-state bound above is an
+# ASYMPTOTE that a 300 s run does not approach at these scales.  RSS sampled
+# during real runs:
+#
+#     keys   prefill   peak seen   ratio   note
+#      20M   1628 MB     6434 MB   3.95x   plateaued at t=35 s
+#      60M   4883 MB     9356 MB   1.92x   still climbing at t=340 s
+#
+# Small keyspaces saturate fast; larger ones do not saturate at all within a
+# run.  The insert rate is roughly scale-invariant -- half the keyspace is
+# absent at every scale, so ops/s x P(absent) is similar -- which means growth
+# is about 9 GB per 360 s window regardless of `keys`.  For campaign01 at 300M
+# keys expect a peak near 33 GiB, not the 95 GiB the 4x bound suggests.
+#
+# Two things follow:
+#   - Memory headroom is much larger than the 4x column implies. The slurm
+#     job still runs a memory watchdog, because being wrong about this in the
+#     other direction costs a whole reservation.
+#   - Warmup stays at 60 s. Steady state is unreachable in an acceptable run
+#     length at 3x scale, so a longer warmup would only shift the measurement
+#     from ~1.15x to ~1.25x prefill while breaking protocol match with
+#     stormbreaker. Throughput is stable during growth anyway (measured drift
+#     0.0-0.2% across a 300 s window), and every config runs a fresh process
+#     from identical prefill, so the configs stay comparable to each other.
+#
 # --threads comes from PARTITION_THREADS (64 on nodes 0+7), NOT the
 # benchmarks.py default of 80, which is a stormbreaker value.  Do NOT use
 # runYCSB.py's --perlmutter defaults (200M keys / 266600 buckets / 128 threads):
