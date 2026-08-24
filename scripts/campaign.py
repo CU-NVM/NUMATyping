@@ -77,11 +77,23 @@ def machine_info():
                 break
     except Exception:
         pass
+    # THP materially changes NUMA page-migration behaviour, so it belongs in the
+    # provenance: it is set at runtime, reverts to the kernel default on reboot,
+    # and nothing else on the machine records when it changed.
+    def sysfs_choice(path):
+        try:                                     # "always [madvise] never" -> "madvise"
+            t = Path(path).read_text()
+            return t[t.index("[") + 1:t.index("]")]
+        except Exception:
+            return "?"
     me = machine_env()
     return {"host": socket.gethostname(), "cpu": cpu,
             "nodes": nodes, "kernel": platform.release(),
             "bind": me["NUMACTL_BIND"],
-            "node_order": me["NUMA_NODE_ORDER"] or "auto"}
+            "node_order": me["NUMA_NODE_ORDER"] or "auto",
+            "thp": sysfs_choice("/sys/kernel/mm/transparent_hugepage/enabled"),
+            "thp_defrag": sysfs_choice("/sys/kernel/mm/transparent_hugepage/defrag"),
+            "numa_balancing": autonuma()[0]}
 
 
 def build(root, bench, umf=True, do_numafy=False):
@@ -181,7 +193,8 @@ def write_or_append_manifest(path, *, bench, binary, purpose, git_hash, git_subj
     forced = (f" -- FORCED via --an-mode (kernel numa_balancing={kernel_an}; "
               f"numactl --balancing only, not a kernel toggle)" if an_forced else "")
     run_line = (f"- AN_{an_str} -- {datetime.datetime.now():%Y-%m-%d %H:%M:%S} "
-                f"-- kernel {machine['kernel']}{forced}\n")
+                f"-- kernel {machine['kernel']} -- THP={machine['thp']} "
+                f"-- numa_balancing={machine['numa_balancing']}{forced}\n")
     if path.exists():                                   # a sibling AN run already created it
         with open(path, "a") as f:
             f.write(run_line)
@@ -195,7 +208,10 @@ def write_or_append_manifest(path, *, bench, binary, purpose, git_hash, git_subj
         f.write(f"- **machine:** {machine['host']} - {machine['cpu']} - "
                 f"{machine['nodes']} NUMA nodes - kernel {machine['kernel']}\n")
         f.write(f"- **numa binding:** `{machine['bind']}` - "
-                f"NUMA_NODE_ORDER={machine['node_order']}\n\n")
+                f"NUMA_NODE_ORDER={machine['node_order']}\n")
+        f.write(f"- **kernel tunables:** THP={machine['thp']} "
+                f"(defrag={machine['thp_defrag']}) - "
+                f"numa_balancing={machine['numa_balancing']}\n\n")
         f.write("## Parameters\n| param | value |\n|-------|-------|\n")
         for k, v in params.items():
             f.write(f"| {k} | {v} |\n")

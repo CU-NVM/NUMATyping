@@ -176,11 +176,35 @@ the one where a perfectly working `-b` looks broken. Judge the pilot by the
 power on ops (the throughput deltas in the runs above were 1.2% and 0.1%, i.e.
 noise at n=1).
 
-### 2.2 THP
+### 2.2 THP — set at runtime, not recorded until 2026-08-24
 
-THP is `always` here. This materially affects NUMA page-migration behavior and
-therefore the AN_on results. If the target machine differs, the comparison across
-machines is not apples-to-apples — record the value.
+THP materially affects NUMA page-migration behaviour and therefore the AN_on
+results. On this machine it is **toggled by hand and reverts on reboot**:
+
+```
+/proc/cmdline           no transparent_hugepage= override
+compiled-in default     madvise   (what a fresh boot gives)
+observed 2026-08-23     always    (someone had set it that boot)
+observed 2026-08-24      madvise   (after the 05:02 reboot)
+```
+
+Nothing on the machine records when it changes — no service writes it, and it
+leaves no trace in shell history.
+
+**The Jul-Aug 2026 campaigns did not record it, so their THP value is not
+recoverable.** What *is* established, from `wtmp`: there was **no reboot between
+Wed 2026-07-29 17:25 and Thu 2026-08-13 11:52**, and every campaign
+(campaign03, campaign04, campaign01, campaign01.1, campaign02, campaign02.1,
+DS campaign01) ran inside that single boot session. So THP was necessarily
+**identical across all of them and across both AN arms of each** — the
+AN_on/AN_off comparisons are internally valid whatever the value was. Only the
+absolute value, and hence cross-machine comparison, is unverifiable. Do not
+assert a THP setting for those campaigns in a paper.
+
+`campaign.py` now records `THP=`, `defrag=` and `numa_balancing=` in the manifest
+identity block **and in every run line** — per-run because THP can be changed
+between a campaign's AN_off and AN_on runs, which are separate invocations often
+hours or days apart.
 
 ---
 
