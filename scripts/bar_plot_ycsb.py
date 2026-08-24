@@ -189,6 +189,37 @@ def get_data(an_folder, base_dir, target_threads, workloads, is_perlmutter, stop
                 
     return normalized_data, x_labels, own_baseline
 
+
+def detect_threads(base_dir, workloads, campaign_mode, suffix="", is_zipfian=False):
+    """Thread counts present in the data.
+
+    The plotting code filters rows by num_threads, and that value used to be
+    hardcoded to 80 (stormbreaker) or 128 (--perlmutter, the paper's number).
+    Any other thread count silently matched zero rows and every bar was drawn at
+    zero -- an empty chart rather than an error.  PARTITION_THREADS is 64 on
+    Perlmutter nodes 0+7 (stormbreaker.md section 9.3), so that is exactly what
+    happens to a correctly configured Perlmutter campaign.
+    """
+    found = set()
+    for an in ("AN_off", "AN_on"):
+        d = base_dir / an if campaign_mode else base_dir
+        if not d.is_dir():
+            continue
+        for wl in workloads:
+            name = f"ycsb_{wl}_zipfian.csv" if is_zipfian else f"ycsb_{wl}{suffix}.csv"
+            f = d / name
+            if not f.is_file():
+                continue
+            try:
+                df = pd.read_csv(f, skipinitialspace=True)
+                df.columns = df.columns.str.strip().str.lower()
+                found.update(pd.to_numeric(df["num_threads"], errors="coerce")
+                               .dropna().astype(int).unique().tolist())
+            except Exception:
+                pass
+    return sorted(found)
+
+
 # ============================================================================
 # Main Logic
 # ============================================================================
@@ -219,6 +250,9 @@ def parse_args():
                         help="Config to normalize throughput against (default: numa/regular).")
     parser.add_argument('--ROOT_DIR', type=str, default=os.path.expanduser("~/NUMATyping"))
     parser.add_argument('--stop', type=int, default=0, help="Stop sampling at this many seconds (0 = end of data)")
+    parser.add_argument('--threads', type=int, default=None,
+                        help="Thread count to select rows for. Default: auto-detect from the "
+                             "data when it contains exactly one value, else 80.")
     parser.add_argument('--suffix', type=str, default='', help="Extra filename suffix before .csv, e.g. _uniform_0")
     return parser.parse_args()
 
@@ -244,6 +278,25 @@ def main():
     else:
         base_dir = root_dir / "Graphs"
         target_threads = 80
+
+    # --threads wins; otherwise auto-detect from the data when it is unambiguous.
+    # Falling back to the legacy literal keeps stormbreaker's behaviour identical
+    # (its data is 80), while a 64-thread Perlmutter campaign now just works
+    # instead of rendering an empty chart.
+    if args.threads is not None:
+        target_threads = args.threads
+    else:
+        present = detect_threads(base_dir, args.workloads, campaign_mode,
+                                 args.suffix, args.zipfian)
+        if len(present) == 1 and present[0] != target_threads:
+            print(f"Auto-detected num_threads={present[0]} in the data "
+                  f"(was defaulting to {target_threads}).")
+            target_threads = present[0]
+        elif len(present) > 1:
+            print(f"Warning: data contains multiple thread counts {present}; "
+                  f"using {target_threads}. Pass --threads to choose.")
+        elif not present:
+            print(f"Warning: could not read num_threads from the data; using {target_threads}.")
 
     configs = ['numa-numa', 'numa-regular', 'regular-numa', 'regular-regular']
     custom_colors = ["#133bcb", "#f9d405", "#5ab057", "#5E5959"]
@@ -389,7 +442,13 @@ def main():
 
     # Naming convention: [Normalization]_normalized_[Workloads]
     shared_tag = "" if args.baseline_from == "own" else f"_vsAN{args.baseline_from}"
-    base_out_name = f"{baseline_config}_normalized_{joined_labels}{shared_tag}"
+    # In campaign mode every figure lands in one slug folder, so the AutoNUMA
+    # mode has to be in the FILENAME -- outside campaign mode it is carried by
+    # the directory (AN_on/figs vs AN_both/figs).  Without this, running --AN
+    # both, then on, then off silently overwrites the same file three times and
+    # only the last survives.
+    an_tag = f"_AN{args.AN}" if campaign_mode else ""
+    base_out_name = f"{baseline_config}_normalized_{joined_labels}{shared_tag}{an_tag}"
 
     if campaign_mode:
         # Drop figures directly into the slug folder, next to manifest.md / git_diff.txt.
