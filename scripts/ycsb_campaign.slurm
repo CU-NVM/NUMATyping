@@ -4,7 +4,7 @@
 #SBATCH --qos=regular
 #SBATCH --nodes=1
 #SBATCH --exclusive
-#SBATCH --time=05:00:00
+#SBATCH --time=06:00:00
 #SBATCH --job-name=ycsb-campaign
 #SBATCH --output=Runs/slurm/%x-%j.out
 #SBATCH --error=Runs/slurm/%x-%j.out
@@ -67,6 +67,13 @@ on_exit() {
         echo "--- last 40 lines of $RUNLOG ---"
         tail -40 "$RUNLOG" 2>/dev/null || echo "(no campaign log written)"
     fi
+    [ -n "${WATCHDOG_PID:-}" ] && kill "$WATCHDOG_PID" 2>/dev/null
+    if [ -s "${MEMLOG:-/nonexistent}" ]; then
+        echo "peak memory use on nodes 0+7 (128174 MB total):"
+        awk '{for(i=1;i<=NF;i++) if($i ~ /^total=/){split($i,a,"=");v=a[2]+0;
+              if(min==""||v<min) min=v}} END{if(min!="")
+              printf "  minimum free seen: %d MB  ->  peak used: %d MB\n", min, 128174-min}' "$MEMLOG"
+    fi
     echo "ended  : $(date)"
     echo "======================================================================"
     exit $rc
@@ -110,6 +117,44 @@ echo "numa_balancing : $(cat /proc/sys/kernel/numa_balancing)  (kernel knob; we 
 echo "                 the AN contrast here is numactl --balancing per process, via --an-mode"
 echo "free memory on the bound nodes:"
 numactl -H | grep -E '^node (0|7) (size|free)'
+
+
+# --- memory watchdog ---------------------------------------------------------
+# campaign01 is the tightest fit: ~95 GiB at the 4x steady-state bound against
+# the ~125 GiB nodes 0+7 provide.  If the working set overshoots, the OOM killer
+# takes the process and the whole reservation is wasted.  Sample per-node free
+# memory and bail out early -- with a diagnosis -- rather than being killed.
+node_free_mb() { awk -v n="$1" '$0 ~ "Node "n" MemFree:" {print int($4/1024)}' \
+                     "/sys/devices/system/node/node$1/meminfo" 2>/dev/null; }
+
+MEMLOG="Runs/slurm/${CAMPAIGN}-${AN_MODE}-${JOBID}.mem.log"
+MEM_LOW_WATER_MB="${MEM_LOW_WATER_MB:-6144}"
+WATCHDOG_PID=""
+
+mem_watchdog() {
+    local tick=0
+    while :; do
+        local f0 f7 free
+        f0=$(node_free_mb 0); f7=$(node_free_mb 7)
+        free=$(( ${f0:-0} + ${f7:-0} ))
+        echo "$(date +%H:%M:%S) node0_free=${f0}MB node7_free=${f7}MB total=${free}MB" >> "$MEMLOG"
+        if [ "$free" -lt "$MEM_LOW_WATER_MB" ]; then
+            echo "!!! MEMORY LOW: ${free} MB free on nodes 0+7, below the ${MEM_LOW_WATER_MB} MB floor."
+            echo "!!! The working set has outgrown the bound nodes. Aborting before the OOM"
+            echo "!!! killer does, so the failure is diagnosable. Reduce --keys for this campaign."
+            scancel --signal=TERM "${SLURM_JOB_ID:-0}" 2>/dev/null || kill -TERM "$MAIN_PID"
+            return
+        fi
+        # a heartbeat every 5 min in the main log, so progress is visible without tailing memlog
+        tick=$((tick+1))
+        [ $((tick % 10)) -eq 0 ] && echo "[mem] $(date +%H:%M:%S) free on nodes 0+7: ${free} MB"
+        sleep 30
+    done
+}
+
+MAIN_PID=$$
+mem_watchdog & WATCHDOG_PID=$!
+echo "memory watchdog started (pid $WATCHDOG_PID, floor ${MEM_LOW_WATER_MB} MB, log $MEMLOG)"
 
 # --- campaign definition -----------------------------------------------------
 source scripts/ycsb_campaigns.sh
