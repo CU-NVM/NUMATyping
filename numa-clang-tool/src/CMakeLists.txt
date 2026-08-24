@@ -26,16 +26,40 @@ macro(find_shared_lib_dynamic NAME_VAR HINT_DIR PATTERN)
     endif()
 endmacro()
 
-# Discover shared libraries (HINT_DIR comes from FindLLVM.cmake)
-find_shared_lib_dynamic(LLVM_SHARED_LIB "${LLVM_LIB_DIR}" "libLLVM*.so")
+# Same discovery, but tolerating absence: whether the library is actually
+# needed is decided by the shape detection in 1b below.
+macro(find_shared_lib_optional NAME_VAR HINT_DIR PATTERN)
+    if(NOT ${NAME_VAR})
+        file(GLOB CANDIDATES "${HINT_DIR}/${PATTERN}")
+        if(CANDIDATES)
+            list(GET CANDIDATES 0 ${NAME_VAR})
+            set(${NAME_VAR} "${${NAME_VAR}}" CACHE PATH "Path to ${PATTERN}")
+            message(STATUS "Found Shared Library ${PATTERN}: ${${NAME_VAR}}")
+        else()
+            message(STATUS "No ${PATTERN} in ${HINT_DIR} -- assuming LLVM is embedded "
+                           "in libclang-cpp (see 1b)")
+        endif()
+    else()
+        message(STATUS "Using user-provided ${NAME_VAR}: ${${NAME_VAR}}")
+    endif()
+endmacro()
+
+# Discover shared libraries (HINT_DIR comes from FindLLVM.cmake).
+#
+# libclang-cpp is always required.  libLLVM.so is NOT: an LLVM that ships static
+# archives plus a libclang-cpp.so with LLVM embedded has no libLLVM*.so at all,
+# and does not need one.  Searching for it fatally here would make such an
+# install unbuildable before 1b ever gets to decide -- which is exactly what
+# stormbreaker's hand-built /usr/local trunk LLVM is.
 find_shared_lib_dynamic(CLANG_CPP_SHARED_LIB "${LLVM_LIB_DIR}" "libclang-cpp*.so")
+find_shared_lib_optional(LLVM_SHARED_LIB "${LLVM_LIB_DIR}" "libLLVM*.so")
 
 # --- 1b. Should libLLVM.so be linked separately? ---
 # LLVM installations come in two shapes:
 #
 #   (a) libclang-cpp.so has a DT_NEEDED on libLLVM.so, i.e. one shared copy of
 #       LLVM that both libraries use.  Linking both is correct and required.
-#       (stormbreaker's hand-built /usr/local trunk LLVM is this shape.)
+#       (Ubuntu/Debian distro LLVM packages are typically this shape.)
 #
 #   (b) libclang-cpp.so statically embeds its own complete copy of LLVM and has
 #       no DT_NEEDED on libLLVM.so.  Linking both then loads TWO full copies of
@@ -77,6 +101,13 @@ if(NOT DEFINED LINK_LLVM_DYLIB)
                         "with 'munmap_chunk(): invalid pointer' at exit, configure with "
                         "-DLINK_LLVM_DYLIB=OFF.")
     endif()
+endif()
+
+if(LINK_LLVM_DYLIB AND NOT LLVM_SHARED_LIB)
+    message(FATAL_ERROR
+        " libclang-cpp.so has a DT_NEEDED on libLLVM.so, but no libLLVM*.so was\n"
+        " found in ${LLVM_LIB_DIR}.  Pass -DLLVM_SHARED_LIB=/path/to/libLLVM.so,\n"
+        " or -DLINK_LLVM_DYLIB=OFF if it genuinely should not be linked.")
 endif()
 
 if(LINK_LLVM_DYLIB)

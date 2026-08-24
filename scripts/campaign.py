@@ -133,7 +133,7 @@ MACHINE_ENV_DEFAULTS = {
 def machine_env(root=ROOT):
     """Parse ROOT/machine.env ('export K=V' / 'K=V') into a dict.
 
-    machine.env is written by scripts/detect_machine.sh and pins the physical
+    machine.env is written by scripts/configure_machine.sh (topo stage) and pins
     NUMA nodes this machine's experiment runs on.  Reading it here is what lets
     the same campaign run on stormbreaker (nodes 0,1) and on an 8-node machine
     (nodes 0,7) with no edit to this file.
@@ -313,7 +313,8 @@ def main():
     if not (ROOT / "machine.env").exists():
         print("WARNING: no machine.env found -- falling back to "
               f"'{MACHINE_ENV_DEFAULTS['NUMACTL_BIND']}' (stormbreaker).\n"
-              "         Run  bash scripts/detect_machine.sh  first on a new machine.\n")
+              "         Run  bash scripts/configure_machine.sh --stages=topo  "
+              "first on a new machine.\n")
     print(f"--- numa binding: {me['NUMACTL_BIND']}"
           f"   NUMA_NODE_ORDER={me['NUMA_NODE_ORDER'] or 'auto-detect'}")
 
