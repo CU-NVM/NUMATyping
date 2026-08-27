@@ -33,8 +33,17 @@
 #include <iostream>
 
 #ifndef NUMA_NODE_NUM
-    #warning "NUMA NODES for je malloc handle is set to 2."
-    #define NUMA_NODE_NUM 2
+    // This suite runs FOUR logical partitions (thread_numa<0..3> in main.cpp,
+    // NUM_NUMA_NODES=4), so four jemalloc pools must be created.  At 2 the init
+    // loop registers only pool_by_slot[0..1]; umf_alloc(2)/umf_alloc(3) then hit
+    // umfJemallocBindThread() with pool_by_slot[slot]==NULL -- an assert in a
+    // debug build, and in a Release build (NDEBUG) a silent mallocx() with
+    // uninitialised flags, i.e. partitions 2 and 3 allocate unbound.
+    // 4 <= UMF_JE_MAX_POOLS (16), so the static_assert below still holds.
+    // Local to this suite: -Iinclude/ precedes -I$(ROOT_DIR)/numaLib in the
+    // Makefile, so numaLib's copy (which stays at 2 for the two-partition
+    // suites) is unaffected.
+    #define NUMA_NODE_NUM 4
 #endif
 
 

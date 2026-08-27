@@ -32,6 +32,12 @@ YCSB_WORKLOADS = [
 DS_HEADER = ("Date, Time, DS_Name, Num_DS, Num_Threads, Thread_Config, DS_Config, "
              "Duration, Keyspace, Interval, Ops_Node0, Ops_Node1, Total_Ops")
 
+# DataStructureTests_four splits four ways, so print_function() emits four op
+# columns rather than two (main.cpp loops over perNode[NUM_NUMA_NODES]).
+DS4_HEADER = ("Date, Time, DS_Name, Num_DS, Num_Threads, Thread_Config, DS_Config, "
+              "Duration, Keyspace, Interval, Ops_Node0, Ops_Node1, Ops_Node2, "
+              "Ops_Node3, Total_Ops")
+
 
 def ycsb_argv(binary, th, ds, p):
     return [binary,
@@ -80,6 +86,27 @@ BENCHES = {
     # so campaigns land in Campaigns/DS/<slug>/.  Column names deliberately match
     # the ycsb header (Thread_Config / DS_Config / Duration / Total_Ops) so
     # an_comparison.py and campaign_comparison.py work on DS campaigns unchanged.
+    # Four logical partitions (thread_numa<0..3>) mapped onto the CPU-bearing
+    # nodes by numa_node_map(k) = order[k % order.size()].  On a 2-node machine
+    # that is 0,1,0,1 -- i.e. two partitions per physical node, half and half.
+    "DS4": {
+        "suite":     "DataStructureTests_four",
+        "binary":    "Output/DataStructureTests_four/bin/datastructures",
+        "header":    DS4_HEADER,
+        "argv":      bst_argv,               # identical CLI to DS
+        "workloads": ["BinarySearchTree"],
+        "cwd":       "Output/DataStructureTests_four",
+        "params": [
+            # num_DS and num_threads are divided by 4 inside the benchmark, so
+            # these are TOTALS, matching DS -- keep threads a multiple of 4.
+            param("numDS",    int, 1000000,   "number of data structures (indices), split 4 ways"),
+            param("threads",  int, 80,        "worker threads, split 4 ways"),
+            param("keys",     int, 80,        "keyspace per tree"),
+            param("duration", int, 600,       "seconds per config"),
+            param("interval", int, 60,        "reporting interval seconds"),
+        ],
+    },
+
     "DS": {
         "suite":     "DataStructureTests",   # bench key != suite dir, so numafy
                                              # and Output/ must use this name

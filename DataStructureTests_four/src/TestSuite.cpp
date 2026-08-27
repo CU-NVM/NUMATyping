@@ -65,13 +65,23 @@ int checkNUMANode(void* ptr) {
 }
 
 
+// Ported from DataStructureTests: duration/interval truncates, so any duration
+// that is not a multiple of interval under-sizes the ops vectors and every
+// worker writes past the end.  duration < interval sized them at ZERO.
+int numIntervals(int duration, int interval){
+    if(interval <= 0){ return 1; }
+    int n = (duration + interval - 1) / interval;   // round up
+    return n > 0 ? n : 1;
+}
+
 void global_init(int num_threads, int duration, int interval){
     pthread_barrier_init(&bar, NULL, num_threads);
     pthread_barrier_init(&init_bar, NULL, NUM_NUMA_NODES);
-    globalOps0.assign(duration/interval, 0);
-    globalOps1.assign(duration/interval, 0);
-    globalOps2.assign(duration/interval, 0);
-    globalOps3.assign(duration/interval, 0);
+    const int n = numIntervals(duration, interval);
+    globalOps0.assign(n, 0);
+    globalOps1.assign(n, 0);
+    globalOps2.assign(n, 0);
+    globalOps3.assign(n, 0);
     ops0 = ops1 = ops2 = ops3 = 0;
     printLK = new std::mutex();
     globalLK = new std::mutex();
@@ -206,7 +216,7 @@ void BinarySearchTest(int tid, int duration, int node, int64_t num_DS, int num_t
 
     int64_t ops = 0;
     thread_local vector<int64_t> localOps;
-    localOps.assign(duration/interval, 0);
+    localOps.assign(numIntervals(duration, interval), 0);   // see numIntervals(): truncation sized this at 0
 
     auto startTimer  = std::chrono::steady_clock::now();
     auto endTimer    = startTimer + std::chrono::seconds(duration);
