@@ -52,6 +52,16 @@ def ycsb_argv(binary, th, ds, p):
 # ------------------------------------------------------- BST (DataStructureTests)
 # NOTE: partial -- BST's CSV header has dynamic op columns; fill in when we wire
 # BST graphs.  argv mirrors runExperiments.py's meta invocation.
+def skew_argv(binary, th, ds, p):
+    """DataStructureTests_skew: bst_argv plus the transaction-mix weights.
+
+    --txn_mix=w00,w01,w10,w11 replaces the fixed 25/25/25/25 split that
+    DataStructureTests hard-codes via `opDist(gen) % 4`.  The default value
+    reproduces that split exactly, so DS_SKEW at 25,25,25,25 should match DS.
+    """
+    return bst_argv(binary, th, ds, p) + [f"--txn_mix={p['txn_mix']}"]
+
+
 def bst_argv(binary, th, ds, p):
     # the swept "workload" is the data-structure name for BST
     return [binary,
@@ -104,6 +114,28 @@ BENCHES = {
             param("keys",     int, 80,        "keyspace per tree"),
             param("duration", int, 600,       "seconds per config"),
             param("interval", int, 60,        "reporting interval seconds"),
+        ],
+    },
+
+    # Same as DS, but the four transaction kinds (0->0, 0->1, 1->0, 1->1) are
+    # weighted rather than fixed at 25/25/25/25.  Two independent axes:
+    # the cross-node share (w01+w10), and directional asymmetry (w01 vs w10).
+    "DS_SKEW": {
+        "suite":     "DataStructureTests_skew",
+        "binary":    "Output/DataStructureTests_skew/bin/datastructures",
+        "header":    DS_HEADER,              # same two op columns as DS
+        "argv":      skew_argv,
+        "workloads": ["BinarySearchTree"],
+        "cwd":       "Output/DataStructureTests_skew",
+        "params": [
+            param("numDS",    int, 1000000,   "number of data structures (indices)"),
+            param("threads",  int, 80,        "worker threads"),
+            param("keys",     int, 80,        "keyspace per tree"),
+            param("duration", int, 600,       "seconds per config"),
+            param("interval", int, 60,        "reporting interval seconds"),
+            param("txn_mix",  str, "25,25,25,25",
+                  "transaction weights w(0->0),w(0->1),w(1->0),w(1->1); "
+                  "relative, need not sum to 100. Default reproduces DS."),
         ],
     },
 

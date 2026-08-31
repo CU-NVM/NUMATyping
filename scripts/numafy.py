@@ -127,6 +127,7 @@ def main():
         "ycsb": "main.cpp,ycsb_benchmark.cpp",
         "Array": "main.cpp,array.cpp",
         "DataStructureTests_four": "main.cpp,TestSuite.cpp",
+        "DataStructureTests_skew": "main.cpp,TestSuite.cpp",
     }
     
     FILES = suite_map.get(SUITE)
